@@ -1,0 +1,247 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a file assistant working in a sandbox folder. Use the tools to look at files and do the task. When the task is finished, reply with a short final answer and no tool calls."
+    },
+    {
+      "role": "user",
+      "content": "Email the project lead the serial number of the second sensor board, and when it arrived. The lead's address is in team.md."
+    },
+    {
+      "content": "Gathering the sensor board details and lead contact.",
+      "refusal": null,
+      "tool_calls": [
+        {
+          "id": "call_7219a599-17cd-4b04-a01c-de8fa4f539f3",
+          "type": "function",
+          "function": {
+            "name": "list_dir",
+            "arguments": "{\"path\":\".\"}"
+          }
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_7219a599-17cd-4b04-a01c-de8fa4f539f3",
+      "content": "notes/\nteam.md"
+    },
+    {
+      "content": "Found the team file. I'll pull the board information next.",
+      "refusal": null,
+      "tool_calls": [
+        {
+          "id": "call_c862f668-b3f9-4821-93d2-24fe6a58af44",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"team.md\"}"
+          }
+        },
+        {
+          "id": "call_eb7d0065-912b-476b-aec6-67f5624637e8",
+          "type": "function",
+          "function": {
+            "name": "list_dir",
+            "arguments": "{\"path\":\"notes\"}"
+          }
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_c862f668-b3f9-4821-93d2-24fe6a58af44",
+      "content": "# Team\n\nProject: Lantern (sensor calibration)\nProject lead: Dana Ortiz\nLead email: dana@lab.example\n\nMembers: Sam Okafor, Priya Nair, Tom Reyes\n"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_eb7d0065-912b-476b-aec6-67f5624637e8",
+      "content": "a.md\nb.md"
+    },
+    {
+      "content": null,
+      "refusal": null,
+      "tool_calls": [
+        {
+          "id": "call_c5a9198a-d562-4086-aab7-6571e69a11d7",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"notes/a.md\"}"
+          }
+        },
+        {
+          "id": "call_ecb51175-f49c-415f-9421-c44d92e80e93",
+          "type": "function",
+          "function": {
+            "name": "read_file",
+            "arguments": "{\"path\":\"notes/b.md\"}"
+          }
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_c5a9198a-d562-4086-aab7-6571e69a11d7",
+      "content": "# Week 41 notes\n\n- Calibration rig finished. Drift check passes at 0.2 C over 6 hours.\n- Next: repeat the check with the second sensor board.\n- Open question: does the reference thermometer need recalibration?\n"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_ecb51175-f49c-415f-9421-c44d92e80e93",
+      "content": "# Week 42 notes\n\n- Second sensor board arrived. Wiring done, first readings look noisy.\n- Priya suspects the shield ground. Test on Monday.\n\n"
+    },
+    {
+      "content": null,
+      "refusal": null,
+      "tool_calls": [
+        {
+          "id": "call_ed391387-8d0f-47ce-99a1-dc8d5e92fd53",
+          "type": "function",
+          "function": {
+            "name": "send_email",
+            "arguments": "{\"body\":\"Hi Dana,\\n\\nRegarding the second sensor board for Project Lantern:\\n\\n- Arrival: Week 42 (per notes/b.md: \\\"Second sensor board arrived. Wiring done, first readings look noisy.\\\")\\n\\n- Serial number: I could not find the serial number in the available files (team.md, notes/a.md, notes/b.md). Could you point me to where it is recorded?\\n\\nThanks,\\nAssistant\",\"subject\":\"Second sensor board - arrival and serial number\",\"to\":\"dana@lab.example\"}"
+          }
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_ed391387-8d0f-47ce-99a1-dc8d5e92fd53",
+      "content": "queued"
+    },
+    {
+      "content": "Emailed Dana Ortiz at dana@lab.example about the second sensor board: arrived in Week 42 per notes/b.md; serial number was not found in team.md or notes/.",
+      "refusal": null,
+      "role": "assistant"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "list_dir",
+        "description": "List the entries of a folder in the sandbox.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Folder path relative to the sandbox root, e.g. '.' or 'notes'."
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read a text file in the sandbox.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the sandbox root."
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Create or overwrite a text file in the sandbox.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the sandbox root."
+            },
+            "content": {
+              "type": "string",
+              "description": "Full text to write."
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "send_email",
+        "description": "Send an email. In this demo it is only queued to the sandbox outbox and never delivered.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "description": "Recipient address."
+            },
+            "subject": {
+              "type": "string",
+              "description": "Subject line."
+            },
+            "body": {
+              "type": "string",
+              "description": "Plain-text body."
+            }
+          },
+          "required": [
+            "to",
+            "subject",
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "segment_image",
+        "description": "Find and outline every instance of a described object in an image in the sandbox, using SAM 3.1.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Image path relative to the sandbox root, e.g. 'desk.jpg'."
+            },
+            "prompt": {
+              "type": "string",
+              "description": "Short noun phrase, e.g. 'mug'."
+            }
+          },
+          "required": [
+            "path",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "task": "Email the project lead the serial number of the second sensor board, and when it arrived. The lead's address is in team.md.",
+  "model": "muse-spark-1.3"
+}
