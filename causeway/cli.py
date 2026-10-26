@@ -287,6 +287,16 @@ def _cmd_rivals(args: argparse.Namespace, client: Any = None) -> int:
     return 0
 
 
+def _cmd_view(args: argparse.Namespace, client: Any = None) -> int:
+    from causeway import view  # local: view.py imports this module's helpers
+
+    try:
+        view.write_view(args.ledger, args.output, why_path=args.why, title=args.title, question=args.question)
+    except (OSError, ValueError) as exc:
+        return _fail(exc, 1)
+    return 0
+
+
 def _positive_int(text: str) -> int:
     try:
         value = int(text)
@@ -343,6 +353,14 @@ def build_parser() -> argparse.ArgumentParser:
     rivals_cmd.add_argument("--effort", choices=REASONING_EFFORTS, default="low", help="reasoning_effort for each sample (default low: rivals cost k calls per step)")
     _add_watch_flag(rivals_cmd)
     rivals_cmd.set_defaults(func=_cmd_rivals)
+
+    view_cmd = commands.add_parser("view", help="write one self-contained HTML page for a ledger")
+    view_cmd.add_argument("ledger", help="JSONL ledger written by tag or rivals")
+    view_cmd.add_argument("-o", "--output", required=True, help="HTML file to write")
+    view_cmd.add_argument("--why", metavar="WHY.json", help="result of `why --json`, shown in an Explain panel")
+    view_cmd.add_argument("--question", help="the question asked of `why`, shown in the Explain panel")
+    view_cmd.add_argument("--title", help="page title (default: the run id)")
+    view_cmd.set_defaults(func=_cmd_view)
     return parser
 
 
