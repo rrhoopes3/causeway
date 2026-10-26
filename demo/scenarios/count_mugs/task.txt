@@ -1,0 +1,1 @@
+How many mugs are on the desk in desk.jpg? Write the count to count.txt.

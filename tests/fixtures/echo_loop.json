@@ -1,0 +1,13 @@
+{
+  "messages": [
+    {"role": "user", "content": "Check the queue folder until it is empty."},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "list_dir", "arguments": "{\"path\": \"queue\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_1", "content": "job-7.txt\n"},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "list_dir", "arguments": "{\"path\": \"queue\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_2", "content": "job-7.txt\n"},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_3", "type": "function", "function": {"name": "list_dir", "arguments": "{\"path\": \"queue\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_3", "content": "job-7.txt\n"},
+    {"role": "assistant", "content": "The queue still holds job-7.txt, so I stopped."}
+  ],
+  "expect": {"d1": "GOAL", "d2": "GOAL", "d3": "GOAL", "d4": "FINAL", "echo": {"d2": "d1", "d3": "d2"}}
+}

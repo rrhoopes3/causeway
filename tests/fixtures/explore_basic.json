@@ -1,0 +1,16 @@
+{
+  "messages": [
+    {"role": "system", "content": "You are a file assistant. Use the tools to answer."},
+    {"role": "user", "content": "Look in /work/notes and tell me which plan is newest."},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "list_dir", "arguments": "{\"path\": \"/work/notes\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_1", "content": "notes.md\nplan-v2.md\nplan.md\n"},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\": \"plan-v2.md\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_2", "content": "# Plan v2\n- ship the parser\n- write tests\n"},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_3", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\": \"notes.md\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_3", "content": "- old idea: rename parser\n"},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_4", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\": \"plan.md\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_4", "content": "# Plan\n- draft only\n"},
+    {"role": "assistant", "content": "plan-v2.md is the newest plan. plan.md is an older draft."}
+  ],
+  "expect": {"d1": "GOAL", "d2": "IN", "d3": "CARRY·1", "d4": "CARRY·2", "d5": "FINAL"}
+}

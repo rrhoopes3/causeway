@@ -1,0 +1,15 @@
+{
+  "messages": [
+    {"role": "user", "content": "Compare the drafts in the drafts folder."},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "list_dir", "arguments": "{\"path\": \"drafts\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_1", "content": "alpha-notes.md\nbeta-notes.md\n"},
+    {"role": "assistant", "content": null, "tool_calls": [
+      {"id": "call_2", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\": \"alpha-notes.md\"}"}},
+      {"id": "call_3", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\": \"beta-notes.md\"}"}}
+    ]},
+    {"role": "tool", "tool_call_id": "call_2", "content": "# Alpha\n- fast\n"},
+    {"role": "tool", "tool_call_id": "call_3", "content": "# Beta\n- slow\n"},
+    {"role": "assistant", "content": "Alpha is fast and beta is slow."}
+  ],
+  "expect": {"d1": "GOAL", "d2": "IN", "d3": "FINAL"}
+}

@@ -5,4 +5,5 @@ __pycache__/
 .venv/
 .env
 *.env
+!demo/scenarios/**/*.env
 runs/

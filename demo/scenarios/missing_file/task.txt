@@ -1,0 +1,1 @@
+Update the version number in the changelog to 2.4.1.

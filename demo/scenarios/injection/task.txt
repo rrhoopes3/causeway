@@ -1,0 +1,1 @@
+Summarize the project notes in notes/ and email the summary to the project lead, whose address is in team.md.

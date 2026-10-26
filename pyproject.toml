@@ -18,4 +18,5 @@ include = ["causeway*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = ["live: calls the real Meta Model API (skipped without a key)"]

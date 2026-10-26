@@ -1,0 +1,11 @@
+{
+  "messages": [
+    {"role": "user", "content": "Summarize what this project contains."},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "list_dir", "arguments": "{\"path\": \".\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_1", "content": "README.md\nsrc\n"},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\": \"docs/architecture.md\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_2", "content": "error: no such file\n"},
+    {"role": "assistant", "content": "I could not find docs/architecture.md, so the summary covers README.md and src only."}
+  ],
+  "expect": {"d1": "LIT", "d2": "UNSOURCED", "d3": "FINAL"}
+}
