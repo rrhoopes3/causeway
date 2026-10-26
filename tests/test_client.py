@@ -187,3 +187,20 @@ def test_fake_client_raises_when_exhausted():
 def test_message_of_returns_first_choice_message():
     message = {"role": "assistant", "content": "hello"}
     assert message_of({"choices": [{"message": message}, {"message": {"content": "other"}}]}) == message
+
+
+def test_stored_key_is_never_sent_to_a_non_meta_server(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY", KEY)
+    captured = []
+    client = ChatClient(base_url="http://127.0.0.1:1234/v1", model="local", transport=_recording_transport(captured))
+    client.complete([{"role": "user", "content": "hi"}])
+    assert "authorization" not in captured[0].headers
+    assert client.api_key is None
+
+
+def test_stored_key_is_loaded_for_meta(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY", KEY)
+    captured = []
+    client = ChatClient(transport=_recording_transport(captured))
+    client.complete([{"role": "user", "content": "hi"}])
+    assert captured[0].headers["authorization"] == f"Bearer {KEY}"

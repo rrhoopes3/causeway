@@ -1,12 +1,11 @@
 # count_mugs
 
-**Task:** "How many mugs are on the desk in desk.jpg? Write the count to count.txt."
+**Task:** "Find every mug on the desk in desk.jpg. Write one line per mug to mugs.txt with its bounding box as x1,y1,x2,y2, then tell me how many there are."
 
-**Planted:** `sandbox/desk.jpg` is a synthetic picture drawn with Pillow, not a photo. It shows four mugs (red, blue, white, green) and one yellow bowl that overlaps the white mug. The bowl is a distractor. The correct count is 4. SAM 3.1 may miscount with synthetic shapes. If it does, the run is still a valid example.
+**Planted:** `sandbox/desk.jpg` is a synthetic picture drawn with Pillow, not a photo. It shows four mugs (red, blue, white, green) and one yellow bowl that overlaps the white mug. The bowl is a distractor, and the correct count is 4. SAM 3.1 may miscount synthetic shapes. If it does, the run is still a valid example, and arguably a better one.
 
 **Expected run:**
-- The agent calls `segment_image` with `path` set to `desk.jpg` and `prompt` set to `mug`. The result is a summary such as `4 x "mug": boxes [[...], ...]`.
-- The agent then calls `write_file` for `count.txt`. Its `path` traces to the task (`GOAL`).
-- Causeway tags the count in `content` as `LIT`, not `IN`. A one-digit string is a trivial literal under SPEC 5.1 (length under 3), so it is never traced. The link from the count to the SAM result is therefore not visible in the ledger. This is a real gap in the spec. Check the count against the `segment_image` result by hand.
+- The agent calls `segment_image` with `path` `desk.jpg` and a prompt such as `mug`. Both trace to the task (`GOAL`).
+- It then calls `write_file` for `mugs.txt`. The `content` is several lines of numbers, so it is a prose leaf (SPEC §5.4c). Every coordinate of 2 or more digits is an atom.
 
-**Causeway tags to look for:** the `segment_image` call's `prompt` (`GOAL`), the `path` (`GOAL`), and the `write_file` `content` (`LIT`, per the note above). The tool result event for `segment_image` is the evidence.
+**Causeway tags to look for:** each coordinate atom in `write_file.content` should trace `IN` (or `CARRY·k`) to the `segment_image` result event, which proves the numbers came from SAM 3.1 and not from the model. A coordinate tagged `UNSOURCED` was made up or mis-copied, and `show` names it.

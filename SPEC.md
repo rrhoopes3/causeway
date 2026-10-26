@@ -116,9 +116,34 @@ Priority when several sources match at the same level: `IN` > `CARRY·k` (smalle
 
 ### 5.4 Decision tag
 
-The decision's `tag` is the highest-priority leaf tag in this order: `UNSOURCED` > `IN` > `CARRY·k` (smallest k) > `GOAL` > `SELF` > `LIT`. A final decision, or one with no leaves, is tagged `FINAL` or `NOARGS` respectively.
+The decision's `tag` is the highest-priority leaf tag in this order: `UNSOURCED` > `IN` > `CARRY·k` (smallest k) > `GOAL` > `SELF` > `PROSE` > `LIT`. A final decision, or one with no leaves, is tagged `FINAL` or `NOARGS` respectively.
 
 `echo_of`: if the decision's actions, canonicalized as a sorted list of `(name, canonical-json(args))`, equal those of an earlier decision, it is that decision's id (the most recent one). A non-null `echo_of` is shown as an `ECHO` badge next to the tag. It flags loops.
+
+### 5.4b Identifiers never match fuzzily
+
+Fuzzy matching (§5.2 level 3) applies only to needles that contain whitespace. A path, email, URL or identifier such as `CHANGELOG.md` must match exactly or after casefolding. Otherwise an invented filename would borrow a source from a word in the task ("update the changelog") and hide the invention.
+
+### 5.4b2 Composed paths
+
+Agents build paths from parts: they list `notes/`, see `a.md`, and read `notes/a.md`. The joined string appears nowhere, so whole-string matching wrongly calls it `UNSOURCED`.
+
+A path-like needle (it contains `/` or `\`) that finds no source at the exact or casefold level gets one more level, `parts`, before fuzzy. Split it on `/` and `\`, and drop empty segments, `.` and `..`. If every remaining segment is found (exact, then casefold) in some prior record, the leaf takes its source and tag from where the **last segment** (the basename) was found, with `"match": "parts"`. A segment of 2 characters or fewer counts as found without a source, so `C:` and `x` don't block a match. If any longer segment is found nowhere, the leaf is `UNSOURCED` as before.
+
+### 5.4c Prose and atoms
+
+Long composed strings like an email body, file content or a summary are not copied from anywhere, so whole-string matching calls them `UNSOURCED`, which is wrong. The parts of them that matter, such as an address, a link or an account number, are exactly what whole-string matching can't see.
+
+A string leaf is **prose** if it has 8 or more whitespace-separated words, or contains a newline. A file of four coordinate lines is prose. A prose leaf:
+
+1. Gets tag `PROSE`. Its cause entry carries `"sources"`: up to 3 prior records whose **coverage** is at least 0.2, highest first, then most recent first. Coverage is the fraction of the prose's distinct tokens found in the record's search texts, after casefolding. Tokens are words of 4 or more letters and numbers of 2 or more digits. The single-valued `source` is the first of those, or null. `PROSE` ranks between `SELF` and `LIT`, and it is never a taint.
+2. Is scanned for **atoms**, each traced like an ordinary leaf (§5.2–5.3, no fuzzy level). Its cause path is `<leaf path>~<n>`, where n is the atom's 0-based index within the leaf. Atoms count toward the decision tag and are taints under watch like any leaf. Atom kinds, in this order, without overlaps:
+   - URLs: `https?://\S+`, with trailing `.,;:)]}'"` stripped.
+   - Email addresses.
+   - File paths: a token with a `/` or `\` or a `.ext` suffix of 1–5 letters, at least 3 characters, not inside a URL or email.
+   - Numbers: `\d+(\.\d+)?` with 2 or more digits in total, not part of the above. Commas always separate numbers, so `522,271,632,380` is four atoms, not one grouped number.
+
+A single-line string under 8 words is still a single ordinary leaf. Under watch, an invented URL inside an email body now shows up as `send_email.body~0 ← nowhere in the run [UNSOURCED]`. One copied from a file the agent read shows as `← e5 read_file(notes/b.md)`.
 
 ### 5.5 Watch (taint check)
 

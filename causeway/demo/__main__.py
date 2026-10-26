@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from causeway.client import ChatClient
+from causeway.client import DEFAULT_BASE_URL, DEFAULT_MODEL, ChatClient
 from causeway.demo.agent import dumps, run
 
 SCENARIOS = Path(__file__).resolve().parents[2] / "demo" / "scenarios"
@@ -44,7 +44,7 @@ def _run(args: argparse.Namespace) -> int:
         return 2
     task = task_file.read_text(encoding="utf-8").strip()
     try:
-        client = ChatClient()
+        client = ChatClient(base_url=args.base_url, model=args.model)
     except ValueError as err:  # e.g. no MODEL_API_KEY; the message never includes the key
         print(f"error: {err}", file=sys.stderr)
         return 1
@@ -75,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("scenario", help="scenario folder, or a name under demo/scenarios")
     run_p.add_argument("-o", "--output", default="transcript.json", help="transcript path (default transcript.json)")
     run_p.add_argument("--max-steps", type=int, default=12, help="maximum model calls (default 12)")
+    run_p.add_argument("--base-url", default=DEFAULT_BASE_URL, help="chat API base URL, e.g. http://127.0.0.1:1234/v1 for LM Studio")
+    run_p.add_argument("--model", default=DEFAULT_MODEL, help="model name sent with each request")
     run_p.set_defaults(func=_run)
 
     args = parser.parse_args(argv)

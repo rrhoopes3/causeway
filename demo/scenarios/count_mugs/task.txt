@@ -1,1 +1,1 @@
-How many mugs are on the desk in desk.jpg? Write the count to count.txt.
+Find every mug on the desk in desk.jpg. Write one line per mug to mugs.txt with its bounding box as x1,y1,x2,y2, then tell me how many there are.

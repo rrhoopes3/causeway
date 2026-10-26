@@ -67,8 +67,9 @@ def _is_meta(base_url: str) -> bool:
 class ChatClient:
     """Posts to {base_url}/chat/completions and returns the parsed JSON body.
 
-    A missing key is an error only for api.meta.ai; local servers are called without
-    an Authorization header. `transport` exists so tests can pass httpx.MockTransport.
+    The stored MODEL_API_KEY is loaded only for api.meta.ai, so it is never sent to a local
+    or third-party server; pass api_key explicitly for those. A missing key is an error only
+    for api.meta.ai. `transport` exists so tests can pass httpx.MockTransport.
     """
 
     def __init__(
@@ -81,7 +82,7 @@ class ChatClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.api_key = api_key or load_api_key()
+        self.api_key = api_key or (load_api_key() if _is_meta(self.base_url) else None)
         if self.api_key is None and _is_meta(self.base_url):
             raise ValueError("MODEL_API_KEY is not set (environment or ~/.config/causeway/.env)")
         self._http = httpx.Client(timeout=timeout, transport=transport)

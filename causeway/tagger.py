@@ -2,7 +2,8 @@
 
 Each non-trivial leaf of a decision's arguments is searched for in the records that came
 before the decision. The chosen source gives the leaf its tag. The decision takes the
-highest-priority tag among its leaves.
+highest-priority tag among its leaves. A prose leaf (§5.4c) is not searched as a whole.
+Its atoms (URLs, emails, paths, numbers) are searched instead.
 """
 
 from __future__ import annotations
@@ -18,12 +19,22 @@ TRIVIAL_NUMBER = 10
 TRIVIAL_STRING = 3
 FUZZY_MIN_NEEDLE = 12
 FUZZY_MIN_TOKEN = 4
+PROSE_MIN_WORDS = 8
+PROSE_SOURCES = 3
 GOAL_ROLES = frozenset({"system", "developer", "user"})
-_BASE_RANK = {"UNSOURCED": 0, "IN": 1, "GOAL": 3, "SELF": 4, "LIT": 5}
+_BASE_RANK = {"UNSOURCED": 0, "IN": 1, "GOAL": 3, "SELF": 4, "PROSE": 5, "LIT": 6}
+_URL = re.compile(r"https?://\S+")
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+_EXTENSION = re.compile(r"\.[A-Za-z]{1,5}$")
+_TOKEN = re.compile(r"[^\W\d_]{4,}|\d{2,}")
+URL_TRAILING = ".,;:)]}'\""
+PATH_LEADING = "\"'([{<"
+PATH_TRAILING = "\"')]}>,;:!?."
 
 
 def canon(args: Any) -> str:
-    """Compact, key-sorted JSON. Used for action signatures and for decision search text."""
+    """Compact, key-sorted JSON. Used for action signatures only."""
     return json.dumps(args, sort_keys=True, separators=(",", ":"))
 
 
@@ -52,6 +63,11 @@ def is_trivial(value: Any) -> bool:
     if isinstance(value, str):
         return len(value.strip()) < TRIVIAL_STRING
     return False
+
+
+def is_prose(value: Any) -> bool:
+    """A string of 8 or more whitespace-separated words, or a string containing a newline (§5.4c)."""
+    return isinstance(value, str) and (len(value.split()) >= PROSE_MIN_WORDS or "\n" in value)
 
 
 def needle_of(value: Any) -> str:
@@ -96,7 +112,7 @@ def source_tag(source: dict, n: int) -> str:
 
 
 def rank(tag: str) -> tuple[int, int]:
-    """Sort key, highest priority first: UNSOURCED, IN, CARRY·k (smallest k), GOAL, SELF, LIT."""
+    """Sort key, highest priority first: UNSOURCED, IN, CARRY·k (smallest k), GOAL, SELF, PROSE, LIT."""
     if tag.startswith(CARRY):
         return (2, int(tag[len(CARRY):]))
     return (_BASE_RANK[tag], 0)
@@ -153,35 +169,146 @@ def _hit(level: str, needle: str, tokens: list[str], numeric: bool, text: str) -
     return bool(tokens) and matched * 5 >= len(tokens) * 3
 
 
+def _best(level: str, needle: str, numeric: bool, texts: list[tuple[int, dict, list[str]]], n: int) -> dict | None:
+    """The best record at level: highest-priority tag, then most recent. None when no record hits."""
+    tokens = _fuzzy_tokens(needle)
+    hits = [
+        (pos, record)
+        for pos, record, record_texts in texts
+        if any(_hit(level, needle, tokens, numeric, text) for text in record_texts)
+    ]
+    if not hits:
+        return None
+    _, record = min(hits, key=lambda hit: (rank(source_tag(hit[1], n)), -hit[0]))
+    return record
+
+
+def _locate(needle: str, n: int, texts: list[tuple[int, dict, list[str]]]) -> dict | None:
+    """Where a path segment or basename is found, exact first, then casefold (§5.4b2)."""
+    for level in ("exact", "casefold"):
+        record = _best(level, needle, False, texts, n)
+        if record is not None:
+            return record
+    return None
+
+
+def _composed(needle: str, n: int, texts: list[tuple[int, dict, list[str]]]) -> dict | None:
+    """Source of a path built from parts (§5.4b2), or None.
+
+    The path is split on / and \\, dropping empty, "." and ".." segments. The basename must be found and gives
+    the source. Each other segment of more than 2 characters must be found somewhere. Shorter segments count as
+    found without a source.
+    """
+    segments = [part for part in re.split(r"[/\\]", needle) if part not in ("", ".", "..")]
+    if not segments:
+        return None
+    basename_source = _locate(segments[-1], n, texts)
+    if basename_source is None:
+        return None
+    for segment in segments[:-1]:
+        if len(segment) > 2 and _locate(segment, n, texts) is None:
+            return None
+    return basename_source
+
+
 def find_source(needle: str, n: int, sources: list[tuple[int, dict]], numeric: bool = False) -> tuple[dict, str] | None:
     """Find the source of needle for decision n.
 
-    Levels are tried in order: exact, casefold, and fuzzy for needles of 12 or more characters that are not
-    numbers. The first level with any hit wins. A record hits when any of its search texts hits. Among the hits,
-    the highest-priority tag wins, then the most recent record. Returns (source record, level), or None.
+    Levels are tried in order: exact, casefold, then parts for a path-like needle (contains / or \\, §5.4b2), then
+    fuzzy. Fuzzy applies only to needles of 12 or more characters that contain whitespace (§5.4b), and never to
+    numbers. The first level with any hit wins. Among the hits of a level, the highest-priority tag wins, then the
+    most recent record. Returns (source record, level), or None.
     """
-    tokens = _fuzzy_tokens(needle)
-    levels = ["exact", "casefold"]
-    if not numeric and len(needle) >= FUZZY_MIN_NEEDLE:
-        levels.append("fuzzy")
     texts = [(pos, record, search_texts(record)) for pos, record in sources]
-    for level in levels:
-        hits = [
-            (pos, record)
-            for pos, record, record_texts in texts
-            if any(_hit(level, needle, tokens, numeric, text) for text in record_texts)
-        ]
-        if hits:
-            _, record = min(hits, key=lambda hit: (rank(source_tag(hit[1], n)), -hit[0]))
+    for level in ("exact", "casefold"):
+        record = _best(level, needle, numeric, texts, n)
+        if record is not None:
             return record, level
+    if not numeric and ("/" in needle or "\\" in needle):
+        record = _composed(needle, n, texts)
+        if record is not None:
+            return record, "parts"
+    if not numeric and len(needle) >= FUZZY_MIN_NEEDLE and any(ch.isspace() for ch in needle):
+        record = _best("fuzzy", needle, numeric, texts, n)
+        if record is not None:
+            return record, "fuzzy"
     return None
+
+
+def _trace(needle: str, numeric: bool, record: dict, sources: list[tuple[int, dict]]) -> tuple[str, str | None, str | None]:
+    """Tag, source id and match level for one needle of decision record."""
+    found = find_source(needle, record["step"], sources, numeric=numeric)
+    if found is None:
+        return "UNSOURCED", None, None
+    source, match = found
+    return source_tag(source, record["step"]), source["id"], match
+
+
+def _is_path(value: str) -> bool:
+    """A token with a slash or backslash, or a .ext suffix of 1 to 5 letters, at least 3 characters long (§5.4c)."""
+    return len(value) >= 3 and ("/" in value or "\\" in value or _EXTENSION.search(value) is not None)
+
+
+def extract_atoms(text: str) -> list[tuple[str, bool]]:
+    """Atoms of a prose string as (text, is_number), in position order, without overlaps (§5.4c).
+
+    Kinds are tried in order: URL, email, file path, number. A later kind may not overlap an earlier one.
+    A number is \\d+(\\.\\d+)? with at least two digits, so commas always separate numbers.
+    """
+    claimed: list[tuple[int, int]] = []
+    found: list[tuple[int, str, bool]] = []
+
+    def claim(start: int, value: str, numeric: bool) -> None:
+        end = start + len(value)
+        if any(start < claimed_end and claimed_start < end for claimed_start, claimed_end in claimed):
+            return
+        claimed.append((start, end))
+        found.append((start, value, numeric))
+
+    for match in _URL.finditer(text):
+        claim(match.start(), match.group().rstrip(URL_TRAILING), False)
+    for match in _EMAIL.finditer(text):
+        claim(match.start(), match.group(), False)
+    for match in re.finditer(r"\S+", text):
+        leading = match.group().lstrip(PATH_LEADING)
+        start = match.start() + len(match.group()) - len(leading)
+        value = leading.rstrip(PATH_TRAILING)
+        if _is_path(value):
+            claim(start, value, False)
+    for match in _NUMBER.finditer(text):
+        if sum(ch.isdigit() for ch in match.group()) >= 2:
+            claim(match.start(), match.group(), True)
+    return [(value, numeric) for _, value, numeric in sorted(found)]
+
+
+def prose_tokens(text: str) -> set[str]:
+    """Distinct casefolded words of 4 or more letters and numbers of 2 or more digits (§5.4c)."""
+    return set(_TOKEN.findall(text.casefold()))
+
+
+def prose_sources(tokens: set[str], sources: list[tuple[int, dict]]) -> list[str]:
+    """Up to PROSE_SOURCES record ids whose coverage of the tokens is at least 0.2.
+
+    Coverage is the fraction of tokens found in the record's search texts. The order is highest coverage first,
+    then most recent first. The coverage test is done in integers: count * 5 >= number of tokens.
+    """
+    if not tokens:
+        return []
+    scored = []
+    for pos, record in sources:
+        texts = [text.casefold() for text in search_texts(record)]
+        count = sum(any(token in text for text in texts) for token in tokens)
+        if count * 5 >= len(tokens):
+            scored.append((count, pos, record["id"]))
+    scored.sort(key=lambda item: (-item[0], -item[1]))
+    return [record_id for _, _, record_id in scored[:PROSE_SOURCES]]
 
 
 def _watch_entries(record: dict, causes: list[dict], watch: frozenset[str]) -> list[dict] | None:
     """Taint entries for the watched actions of a decision (§5.5).
 
     Returns None when no action of the decision is watched, so the decision gets no watch key. A taint is any
-    traced leaf whose tag is not GOAL. Trivial leaves never appear in causes, so they are never taints.
+    traced leaf or atom whose tag is not GOAL or PROSE. Trivial leaves never appear in causes.
     """
     watched = {index for index, action in enumerate(record["actions"]) if action["name"] in watch}
     if not watched:
@@ -189,15 +316,16 @@ def _watch_entries(record: dict, causes: list[dict], watch: frozenset[str]) -> l
     return [
         {"action": cause["action"], "path": cause["path"], "tag": cause["tag"], "source": cause["source"]}
         for cause in causes
-        if cause["action"] in watched and cause["tag"] != "GOAL"
+        if cause["action"] in watched and cause["tag"] not in ("GOAL", "PROSE")
     ]
 
 
 def _tag_decision(record: dict, sources: list[tuple[int, dict]], latest: dict, watch: frozenset[str]) -> dict:
     """Return a copy of a decision with causes, tag, echo_of and, if an action is watched, watch filled in.
 
-    Trivial leaves count toward the tag but get no cause entry. A decision with no actions is FINAL.
-    Echoes only apply to decisions with at least one action. Any watch key already on the record is dropped first.
+    Trivial leaves count toward the tag but get no cause entry. A prose leaf gets a PROSE entry with its
+    sources, then one entry per atom, path <leaf>~<n>. A decision with no actions is FINAL. Echoes only apply
+    to decisions with at least one action. Any watch key already on the record is dropped first.
     """
     causes: list[dict] = []
     leaf_tags: list[str] = []
@@ -206,12 +334,27 @@ def _tag_decision(record: dict, sources: list[tuple[int, dict]], latest: dict, w
             if is_trivial(value):
                 leaf_tags.append("LIT")
                 continue
-            found = find_source(needle_of(value), record["step"], sources, numeric=not isinstance(value, str))
-            if found is None:
-                tag, source_id, match = "UNSOURCED", None, None
-            else:
-                source, match = found
-                tag, source_id = source_tag(source, record["step"]), source["id"]
+            if is_prose(value):
+                found_sources = prose_sources(prose_tokens(value), sources)
+                causes.append({
+                    "action": index, "path": path, "value": value, "tag": "PROSE",
+                    "source": found_sources[0] if found_sources else None,
+                    "sources": found_sources, "match": None,
+                })
+                leaf_tags.append("PROSE")
+                for atom_index, (atom, numeric) in enumerate(extract_atoms(value)):
+                    if numeric and is_trivial(float(atom)):
+                        leaf_tags.append("LIT")
+                        continue
+                    tag, source_id, match = _trace(atom, numeric, record, sources)
+                    causes.append({
+                        "action": index, "path": f"{path}~{atom_index}", "value": atom,
+                        "tag": tag, "source": source_id, "match": match,
+                    })
+                    leaf_tags.append(tag)
+                continue
+            numeric = not isinstance(value, str)
+            tag, source_id, match = _trace(needle_of(value), numeric, record, sources)
             causes.append({"action": index, "path": path, "value": value, "tag": tag, "source": source_id, "match": match})
             leaf_tags.append(tag)
     if not record["actions"]:

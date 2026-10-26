@@ -145,25 +145,33 @@ def test_casefold_match_is_recorded():
 
 
 def test_fuzzy_match_needs_a_needle_of_twelve_characters():
-    long_needle = [user("Check alpha and bravo."), calls(("c1", "read_file", {"path": "alpha-bravo!"}))]
+    long_needle = [user("Check alpha and bravo."), calls(("c1", "read_file", {"path": "alpha bravo!"}))]
     assert cause_summary(decisions_of(long_needle)["d1"]) == [("path", "GOAL", "e1", "fuzzy")]
 
-    short_needle = [user("Check alpha and bravo."), calls(("c1", "read_file", {"path": "alpha-bravo"}))]
+    short_needle = [user("Check alpha and bravo."), calls(("c1", "read_file", {"path": "alpha bravo"}))]
     assert cause_summary(decisions_of(short_needle)["d1"]) == [("path", "UNSOURCED", None, None)]
+
+
+def test_fuzzy_match_needs_whitespace_so_identifiers_never_match_fuzzily():
+    identifier = [user("Check alpha and bravo."), calls(("c1", "read_file", {"path": "alpha-bravo!"}))]
+    assert cause_summary(decisions_of(identifier)["d1"]) == [("path", "UNSOURCED", None, None)]
+
+    changelog = [user("Update the changelog."), calls(("c1", "read_file", {"path": "CHANGELOG.md"}))]
+    assert cause_summary(decisions_of(changelog)["d1"]) == [("path", "UNSOURCED", None, None)]
 
 
 def test_fuzzy_match_needs_sixty_percent_of_tokens():
     two_of_three = [
         user("parser and tokenizer notes"),
-        calls(("c1", "read_file", {"path": "parser-tokenizer-errors.md"})),
+        calls(("c1", "search_notes", {"query": "parser tokenizer errors"})),
     ]
-    assert cause_summary(decisions_of(two_of_three)["d1"]) == [("path", "GOAL", "e1", "fuzzy")]
+    assert cause_summary(decisions_of(two_of_three)["d1"]) == [("query", "GOAL", "e1", "fuzzy")]
 
     one_of_three = [
         user("parser only here"),
-        calls(("c1", "read_file", {"path": "parser-tokenizer-errors.md"})),
+        calls(("c1", "search_notes", {"query": "parser tokenizer errors"})),
     ]
-    assert cause_summary(decisions_of(one_of_three)["d1"]) == [("path", "UNSOURCED", None, None)]
+    assert cause_summary(decisions_of(one_of_three)["d1"]) == [("query", "UNSOURCED", None, None)]
 
 
 def test_unsourced_leaf_has_no_source_or_match():

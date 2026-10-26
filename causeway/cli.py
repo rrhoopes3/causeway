@@ -116,12 +116,28 @@ def render_taints(records: list[dict]) -> str:
     labels = origins(records)
     lines = []
     for record in records:
+        groups: dict[tuple, list[str]] = {}
         for entry in record.get("watch") or []:
-            action = record["actions"][entry["action"]]
-            source = entry["source"]
+            base, _, atom = entry["path"].partition("~")
+            key = (entry["action"], base, entry["source"], entry["tag"])
+            groups.setdefault(key, []).append(atom)
+        for (action_index, base, source, tag), atoms in groups.items():
+            name = record["actions"][action_index]["name"]
             where = f"{source} {labels.get(source, '')}".rstrip() if source else "nowhere in the run"
-            lines.append(f"{WATCH_MARK} {record['id']} {action['name']}.{entry['path']} ← {where}  [{entry['tag']}]\n")
+            lines.append(f"{WATCH_MARK} {record['id']} {name}.{_atom_span(base, atoms)} ← {where}  [{tag}]\n")
     return ("\n" + "".join(lines)) if lines else ""
+
+
+def _atom_span(base: str, atoms: list[str]) -> str:
+    """body~0..15 (16 values) for a contiguous run of atoms from one source; body~0,2 otherwise; body for a plain leaf."""
+    if atoms == [""]:
+        return base
+    if len(atoms) == 1:
+        return f"{base}~{atoms[0]}"
+    numbers = [int(atom) for atom in atoms if atom.isdigit()]
+    if len(numbers) == len(atoms) and numbers == list(range(numbers[0], numbers[0] + len(numbers))):
+        return f"{base}~{numbers[0]}..{numbers[-1]} ({len(numbers)} values)"
+    return f"{base}~{','.join(atoms)}"
 
 
 def load_transcript(path: str) -> tuple[list[dict], list[dict] | None]:

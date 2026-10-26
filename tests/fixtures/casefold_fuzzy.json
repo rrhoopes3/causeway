@@ -5,7 +5,7 @@
     {"role": "tool", "tool_call_id": "call_1", "content": "README.md\nParser Notes.md\nsrc/\n"},
     {"role": "assistant", "content": null, "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\": \"parser notes.md\"}"}}]},
     {"role": "tool", "tool_call_id": "call_2", "content": "# Parser notes\n- tokenizer is slow\n- error paths untested\n"},
-    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_3", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\": \"parser-tokenizer-errors.md\"}"}}]},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_3", "type": "function", "function": {"name": "search_notes", "arguments": "{\"query\": \"parser tokenizer errors\"}"}}]},
     {"role": "tool", "tool_call_id": "call_3", "content": "Section noted. Nothing else to add.\n"},
     {"role": "assistant", "content": "Updated the parser notes."}
   ],

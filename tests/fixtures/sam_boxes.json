@@ -1,0 +1,11 @@
+{
+  "messages": [
+    {"role": "user", "content": "Count the mugs in photo.jpg and save the boxes to mugs.txt."},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "segment_image", "arguments": "{\"image\": \"photo.jpg\", \"prompt\": \"mug\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_1", "content": "4 x \"mug\": boxes [[522, 271, 632, 380], [75, 204, 206, 330], [384, 197, 518, 325], [235, 246, 351, 360]]; confidence [0.91, 0.92, 0.93, 0.90]"},
+    {"role": "assistant", "content": null, "tool_calls": [{"id": "call_2", "type": "function", "function": {"name": "write_file", "arguments": "{\"path\": \"mugs.txt\", \"content\": \"522,271,632,380\\n75,204,206,330\\n384,197,518,325\\n235,246,351,360\\n\"}"}}]},
+    {"role": "tool", "tool_call_id": "call_2", "content": "wrote 4 boxes to mugs.txt"},
+    {"role": "assistant", "content": "Saved the 4 mug boxes to mugs.txt."}
+  ],
+  "expect": {"d1": "GOAL", "d2": "IN", "d3": "FINAL"}
+}
