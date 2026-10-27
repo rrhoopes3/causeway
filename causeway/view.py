@@ -1,6 +1,9 @@
 """Self-contained HTML viewer for a ledger (`python -m causeway view`).
 
-The page is one file. viewer_template.html holds its CSS and JavaScript, and the ledger goes in as a JSON block.
+The page is one file. viewer_template.html holds the flat viewer's CSS and JavaScript, and the ledger goes in as a
+JSON block. `--xr` uses viewer_xr_template.html instead: the same ledger as a spatial lattice, with a WebXR session
+when a headset is available. The default stays the flat page.
+
 Ledger text is untrusted (a tool result can carry HTML or script), so the JSON is escaped so that no string in it
 can close the block, and the page writes ledger text only with textContent. The page makes no network requests:
 its Content-Security-Policy allows only inline script and style.
@@ -18,13 +21,14 @@ from typing import Any
 from causeway import cli, ledger, render, tagger
 
 TEMPLATE_NAME = "viewer_template.html"
+XR_TEMPLATE_NAME = "viewer_xr_template.html"
 _PLACEHOLDER = re.compile(r"__(TITLE|LEDGER_JSON)__")
 _ESCAPES = {"<": "\\u003c", ">": "\\u003e", "&": "\\u0026", " ": "\\u2028", " ": "\\u2029"}
 
 
-def template_text() -> str:
-    """The page template, read from the installed package."""
-    return resources.files("causeway").joinpath(TEMPLATE_NAME).read_text(encoding="utf-8")
+def template_text(name: str | None = None) -> str:
+    """A page template, read from the installed package. The default is the flat viewer."""
+    return resources.files("causeway").joinpath(name or TEMPLATE_NAME).read_text(encoding="utf-8")
 
 
 def embed_json(payload: Any) -> str:
@@ -85,9 +89,12 @@ def build_html(
     title: str | None = None,
     question: str | None = None,
     why: dict[str, Any] | None = None,
+    xr: bool = False,
 ) -> str:
     """The whole page for a ledger. Every record is embedded as-is, plus the derived data the page cannot compute
-    without the tagger: origin labels, goal events, the action text it shows, and the taint groups."""
+    without the tagger: origin labels, goal events, the action text it shows, and the taint groups.
+
+    xr selects the WebXR lattice template. The embedded payload is the same either way."""
     header = next((record for record in records if record.get("kind") == "header"), {})
     if title is None:
         title = f"Causeway · {header['run_id']}" if header.get("run_id") else "Causeway ledger"
@@ -107,7 +114,8 @@ def build_html(
         "why": why,
     }
     values = {"TITLE": html.escape(title, quote=True), "LEDGER_JSON": embed_json(payload)}
-    return _PLACEHOLDER.sub(lambda match: values[match.group(1)], template_text())
+    template = template_text(XR_TEMPLATE_NAME if xr else None)
+    return _PLACEHOLDER.sub(lambda match: values[match.group(1)], template)
 
 
 def write_view(
@@ -117,9 +125,12 @@ def write_view(
     why_path: str | Path | None = None,
     title: str | None = None,
     question: str | None = None,
+    xr: bool = False,
 ) -> None:
-    """Read a ledger (and an optional why result) and write the page as UTF-8 with LF line endings."""
+    """Read a ledger (and an optional why result) and write the page as UTF-8 with LF line endings.
+
+    xr writes the WebXR lattice. Omit it for the flat viewer."""
     records = ledger.read(ledger_path)
     why = load_why(why_path) if why_path is not None else None
-    page = build_html(records, title=title, question=question, why=why)
+    page = build_html(records, title=title, question=question, why=why, xr=xr)
     Path(output_path).write_bytes(page.encode("utf-8"))

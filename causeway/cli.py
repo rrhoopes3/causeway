@@ -291,7 +291,9 @@ def _cmd_view(args: argparse.Namespace, client: Any = None) -> int:
     from causeway import view  # local: view.py imports this module's helpers
 
     try:
-        view.write_view(args.ledger, args.output, why_path=args.why, title=args.title, question=args.question)
+        view.write_view(
+            args.ledger, args.output, why_path=args.why, title=args.title, question=args.question, xr=args.xr
+        )
     except (OSError, ValueError) as exc:
         return _fail(exc, 1)
     return 0
@@ -360,6 +362,7 @@ def build_parser() -> argparse.ArgumentParser:
     view_cmd.add_argument("--why", metavar="WHY.json", help="result of `why --json`, shown in an Explain panel")
     view_cmd.add_argument("--question", help="the question asked of `why`, shown in the Explain panel")
     view_cmd.add_argument("--title", help="page title (default: the run id)")
+    view_cmd.add_argument("--xr", action="store_true", help="write the WebXR lattice page instead of the flat viewer")
     view_cmd.set_defaults(func=_cmd_view)
     return parser
 
