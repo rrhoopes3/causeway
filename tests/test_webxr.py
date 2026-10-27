@@ -6,6 +6,7 @@ Voice transcription is not part of this page.
 
 import json
 import re
+import subprocess
 from importlib import resources
 from pathlib import Path
 
@@ -181,3 +182,307 @@ def test_xr_page_is_deterministic_lf_utf8(tmp_path):
     assert b"\r\n" not in raw
     raw.decode("utf-8")
     assert b"Enter XR" in raw
+
+
+# Drives the real lattice script. A session that ends, or WebGL init that throws, before the end
+# listener used to be attached must put the button back on Enter XR so the next click can start again.
+_XR_STARTUP_HARNESS = r"""
+import fs from 'fs';
+import vm from 'vm';
+
+const html = fs.readFileSync(process.argv[2], 'utf8');
+const open = html.lastIndexOf('<script>');
+const close = html.lastIndexOf('</script>');
+if (open < 0 || close < open) throw new Error('viewer script not found');
+const source = html.slice(open + '<script>'.length, close);
+
+const ledger = JSON.stringify({
+  title: 'Mugs',
+  records: [
+    { causeway: '0.1.0', kind: 'header', model: 'm', run_id: 'spark-count_mugs', source: 'transcript' },
+    { id: 'e1', kind: 'event', role: 'user', step: 1, text: 'count the mugs' },
+    { id: 'd1', kind: 'decision', step: 1, tag: 'FINAL', text: 'two mugs', final: true, actions: [], causes: [], echo_of: null, rivals: null },
+  ],
+});
+
+function assertOk(cond, message) {
+  if (!cond) throw new Error(message);
+}
+
+function makeEl(tag) {
+  const listeners = new Map();
+  const el = {
+    tagName: String(tag).toUpperCase(),
+    id: '',
+    className: '',
+    hidden: false,
+    type: '',
+    title: '',
+    disabled: false,
+    width: 16,
+    height: 16,
+    children: [],
+    style: {},
+    dataset: {},
+    attrs: {},
+    clientWidth: 800,
+    clientHeight: 600,
+  };
+  el._cls = {};
+  el.classList = {
+    toggle(name, force) {
+      el._cls[name] = force === undefined ? !el._cls[name] : !!force;
+    },
+  };
+  let text = '';
+  Object.defineProperty(el, 'textContent', {
+    configurable: true,
+    get() { return text; },
+    set(value) {
+      text = value == null ? '' : String(value);
+      el.children.length = 0;
+    },
+  });
+  el.appendChild = (child) => {
+    el.children.push(child);
+    return child;
+  };
+  el.setAttribute = (key, value) => {
+    el.attrs[key] = String(value);
+  };
+  el.getAttribute = (key) => (Object.prototype.hasOwnProperty.call(el.attrs, key) ? el.attrs[key] : null);
+  el.addEventListener = (type, fn) => {
+    if (!listeners.has(type)) listeners.set(type, []);
+    listeners.get(type).push(fn);
+  };
+  el.dispatch = (type, event) => {
+    (listeners.get(type) || []).slice().forEach((fn) => fn(event));
+  };
+  el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 20, height: 12, right: 20, bottom: 12 });
+  el.focus = () => {};
+  el.setPointerCapture = () => {};
+  el.closest = () => null;
+  el.click = () => {
+    el.dispatch('click', {
+      type: 'click',
+      target: el,
+      button: 0,
+      preventDefault() {},
+      stopPropagation() {},
+    });
+  };
+  return el;
+}
+
+function flush() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function runScenario(mode) {
+  const trace = [];
+  const calls = { requests: 0, delivered: 0, endWithListener: 0, endWithoutListener: 0 };
+  let latest = null;
+
+  function makeSession() {
+    const session = {
+      ended: mode === 'already-ended',
+      listeners: [],
+      addEventListener(type, fn) {
+        if (type === 'end') {
+          trace.push('listen:end');
+          session.listeners.push(fn);
+        } else if (type === 'select') {
+          trace.push('listen:select');
+        }
+      },
+      end() {
+        trace.push('end');
+        if (session.listeners.length > 0) calls.endWithListener += 1;
+        else calls.endWithoutListener += 1;
+        if (session.ended) return Promise.resolve();
+        session.ended = true;
+        const fns = session.listeners.slice();
+        calls.delivered += fns.length;
+        fns.forEach((fn) => fn());
+        return Promise.resolve();
+      },
+      requestReferenceSpace() {
+        return Promise.reject(new Error('no space'));
+      },
+      updateRenderState() {},
+      requestAnimationFrame() {},
+    };
+    return session;
+  }
+
+  const elements = {};
+  function register(id, tag) {
+    const el = makeEl(tag);
+    el.id = id;
+    elements[id] = el;
+    return el;
+  }
+  register('ledger', 'script').textContent = ledger;
+  register('stage', 'main');
+  register('world', 'div');
+  register('curves', 'svg');
+  register('detail', 'section');
+  register('pin-status', 'p');
+  register('enter-xr', 'button').textContent = 'Enter XR';
+  register('xr-status', 'p');
+  register('title', 'h1');
+  register('meta', 'p');
+  register('counts', 'div');
+  register('legend', 'div');
+  register('why', 'section');
+  const xrGl = register('xr-gl', 'canvas');
+  xrGl.getContext = () => {
+    trace.push('getContext');
+    if (mode === 'webgl-missing' || mode === 'already-ended') return null;
+    if (mode === 'webgl-throws') {
+      const error = new Error('webgl');
+      error.name = 'NotSupportedError';
+      throw error;
+    }
+    if (mode === 'startup-throws') {
+      return {
+        makeXRCompatible() {
+          trace.push('makeXRCompatible');
+          latest.ended = true;
+          const error = new Error('WebGL init failed');
+          error.name = 'InvalidStateError';
+          throw error;
+        },
+      };
+    }
+    throw new Error('unknown mode ' + mode);
+  };
+
+  const documentStub = {
+    getElementById(id) {
+      return elements[id] || null;
+    },
+    createElement(tag) {
+      const el = makeEl(tag);
+      if (tag === 'canvas') el.getContext = () => null;
+      return el;
+    },
+    createElementNS(_ns, tag) {
+      return makeEl(tag);
+    },
+    createTextNode(text) {
+      return { textContent: String(text) };
+    },
+    addEventListener() {},
+  };
+
+  const navigatorStub = {
+    xr: {
+      requestSession() {
+        calls.requests += 1;
+        latest = makeSession();
+        trace.push('requestSession');
+        return Promise.resolve(latest);
+      },
+    },
+  };
+
+  const sandbox = {
+    document: documentStub,
+    navigator: navigatorStub,
+    JSON,
+    Math,
+    Object,
+    Array,
+    String,
+    Number,
+    Boolean,
+    parseInt,
+    parseFloat,
+    isNaN,
+    isFinite,
+    Error,
+    TypeError,
+    Promise,
+    Float32Array,
+    Uint8Array,
+    Uint8ClampedArray,
+    Date,
+  };
+  sandbox.window = {
+    isSecureContext: true,
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(source, sandbox, { filename: 'viewer_xr_template.html' });
+
+  assertOk(elements.title.textContent === 'Mugs', mode + ' did not render the ledger title');
+  assertOk(elements['enter-xr'].textContent === 'Enter XR', mode + ' changed the start label before a session');
+  assertOk(elements['pin-status'].textContent.includes('No chip pinned'), mode + ' pin status missing');
+
+  elements['enter-xr'].click();
+  await flush();
+  await flush();
+
+  const label = elements['enter-xr'].textContent;
+  const status = elements['xr-status'].textContent;
+  assertOk(label === 'Enter XR', mode + ' left the button as ' + JSON.stringify(label) + ' status=' + status);
+  assertOk(!status.startsWith('Left the headset'), mode + ' treated a failed start as an exit: ' + status);
+  const listenAt = trace.indexOf('listen:end');
+  assertOk(listenAt !== -1, mode + ' never registered the end listener; trace=' + trace.join(','));
+  for (const mark of ['getContext', 'makeXRCompatible', 'end']) {
+    const at = trace.indexOf(mark);
+    if (at !== -1) assertOk(listenAt < at, mode + ' registered the end listener after ' + mark + '; trace=' + trace.join(','));
+  }
+  if (mode === 'webgl-missing' || mode === 'webgl-throws') {
+    assertOk(trace.includes('end'), mode + ' did not end the session; trace=' + trace.join(','));
+    assertOk(calls.endWithoutListener === 0, mode + ' ended before the listener was attached');
+    assertOk(calls.delivered > 0, mode + ' end event had no listener');
+    assertOk(status.includes('WebGL is not available'), mode + ' status=' + status);
+  }
+  if (mode === 'startup-throws') {
+    assertOk(trace.includes('makeXRCompatible'), mode + ' did not reach WebGL init; trace=' + trace.join(','));
+    assertOk(calls.delivered === 0, mode + ' relied on an end event that had already fired');
+    assertOk(status.includes('InvalidStateError'), mode + ' status=' + status);
+  }
+  if (mode === 'already-ended') {
+    assertOk(calls.delivered === 0, mode + ' expected no second end event');
+    assertOk(status.includes('InvalidStateError'), mode + ' status=' + status);
+  }
+
+  const requestsAfterFailure = calls.requests;
+  elements['enter-xr'].click();
+  await flush();
+  await flush();
+  assertOk(
+    calls.requests === requestsAfterFailure + 1,
+    mode + ' blocked the next session; requests=' + calls.requests + ' label=' + elements['enter-xr'].textContent,
+  );
+  assertOk(
+    elements['enter-xr'].textContent === 'Enter XR',
+    mode + ' second failure stuck the button as ' + elements['enter-xr'].textContent,
+  );
+}
+
+const modes = ['webgl-missing', 'webgl-throws', 'startup-throws', 'already-ended'];
+for (const mode of modes) await runScenario(mode);
+console.log('ok ' + modes.join(','));
+"""
+
+
+def test_failed_xr_startup_allows_another_session(tmp_path):
+    flat = view.template_text()
+    assert "Enter XR" not in flat
+    assert "requestSession" not in flat
+    harness = tmp_path / "xr_startup_failure.mjs"
+    harness.write_text(_XR_STARTUP_HARNESS, encoding="utf-8", newline="\n")
+    completed = subprocess.run(
+        ["node", str(harness), str(ROOT / "causeway" / "viewer_xr_template.html")],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, (completed.stdout + completed.stderr).strip()
+    assert completed.stdout.strip() == "ok webgl-missing,webgl-throws,startup-throws,already-ended"

@@ -368,6 +368,7 @@ h1 {
   var suppressClick = false;
   var hot = {};
   var xrSession = null;
+  var xrActive = false;
   var xrGl = null;
   var xrProg = null;
   var xrReady = false;
@@ -1227,12 +1228,37 @@ h1 {
     if (hover.kind === 'decision' || hover.kind === 'event') togglePin(hover);
   }
 
-  function onSessionEnd() {
+  function releaseSession(session) {
+    if (xrSession !== session) return;
+    xrActive = false;
     xrSession = null;
     enterBtn.textContent = 'Enter XR';
-    setStatus('Left the headset. This page still shows the same ledger.');
+  }
+
+  function onSessionEnd(session) {
+    if (xrSession !== session) return;
+    var leftHeadset = xrActive;
+    releaseSession(session);
     hover = null;
+    if (leftHeadset) setStatus('Left the headset. This page still shows the same ledger.');
     applyFocus();
+  }
+
+  function abandonSession(session) {
+    var ended = !session || session.ended === true;
+    releaseSession(session);
+    if (ended || !session) return;
+    try {
+      var pending = session.end();
+      if (pending && typeof pending.catch === 'function') pending.catch(function () {});
+    } catch (err) {
+      releaseSession(session);
+    }
+  }
+
+  function startupFailure(session, message) {
+    setStatus(message);
+    abandonSession(session);
   }
 
   function setStatus(text) {
@@ -1241,8 +1267,15 @@ h1 {
 
   function beginSession(session) {
     xrSession = session;
+    xrActive = false;
     enterBtn.textContent = 'Exit XR';
     setStatus('In the headset. Point at a decision chip and press the trigger to pin its curves.');
+    // Before any await. Startup can end the session, and an ended session does not fire "end" again.
+    session.addEventListener('end', function () { onSessionEnd(session); });
+    if (session.ended) {
+      startupFailure(session, 'The headset view did not start (InvalidStateError). The lattice on this page is the same ledger.');
+      return;
+    }
     var canvas = document.getElementById('xr-gl');
     try {
       if (!xrGl) {
@@ -1252,11 +1285,17 @@ h1 {
       xrGl = null;
     }
     if (!xrGl || typeof xrGl.makeXRCompatible !== 'function') {
-      setStatus('WebGL is not available, so the headset view did not start. The lattice on this page is the same ledger.');
-      session.end();
+      startupFailure(session, 'WebGL is not available, so the headset view did not start. The lattice on this page is the same ledger.');
       return;
     }
-    xrGl.makeXRCompatible().then(function () {
+    var compatible;
+    try {
+      compatible = xrGl.makeXRCompatible();
+    } catch (err) {
+      startupFailure(session, 'The headset view did not start (' + (err && err.name ? err.name : 'Error') + '). The lattice on this page is the same ledger.');
+      return;
+    }
+    Promise.resolve(compatible).then(function () {
       xrProg = xrProg || linkProgram(xrGl);
       if (!xrProg) throw new Error('shader');
       buildXrResources();
@@ -1273,19 +1312,19 @@ h1 {
         return session.requestReferenceSpace('local');
       });
     }).then(function (space) {
-      if (!space || xrSession !== session) return;
+      if (!space || session.ended || xrSession !== session) {
+        if (xrSession === session) {
+          startupFailure(session, 'The headset view did not start (' + (session.ended ? 'InvalidStateError' : 'Error') + '). The lattice on this page is the same ledger.');
+        }
+        return;
+      }
       refSpace = space;
-      session.addEventListener('end', onSessionEnd);
       session.addEventListener('select', onSelect);
       glSetup(xrGl);
+      xrActive = true;
       session.requestAnimationFrame(onFrame);
     }).catch(function (err) {
-      setStatus('The headset view did not start (' + (err && err.name ? err.name : 'Error') + '). The lattice on this page is the same ledger.');
-      if (xrSession === session) {
-        xrSession = null;
-        enterBtn.textContent = 'Enter XR';
-      }
-      session.end().catch(function () {});
+      startupFailure(session, 'The headset view did not start (' + (err && err.name ? err.name : 'Error') + '). The lattice on this page is the same ledger.');
     });
   }
 
