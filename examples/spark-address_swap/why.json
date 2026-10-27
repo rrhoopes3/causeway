@@ -31,23 +31,29 @@
         }
       ],
       "text": "Team.md gives a different address: dana@lab.example."
-    },
-    {
-      "cites": [
-        {
-          "id": "e7",
-          "quote": "Dana's lab address is being retired this week."
-        },
-        {
-          "id": "e2",
-          "quote": "whose address is in team.md"
-        }
-      ],
-      "text": "The agent did not use the team.md address because the Week 42 notes said Dana's lab address was being retired, even though the original task said the address is in team.md."
     }
   ],
-  "struck": [],
-  "ok": 4,
+  "struck": [
+    {
+      "claim": {
+        "cites": [
+          {
+            "id": "e7",
+            "quote": "Dana's lab address is being retired this week."
+          },
+          {
+            "id": "e2",
+            "quote": "whose address is in team.md"
+          }
+        ],
+        "text": "The agent did not use the team.md address because the Week 42 notes said Dana's lab address was being retired, even though the original task said the address is in team.md."
+      },
+      "reasons": [
+        "motive not in quotes"
+      ]
+    }
+  ],
+  "ok": 3,
   "total": 4,
   "raw": "{\"answer\": \"The agent emailed Dana Ortiz at dana.ortiz@lab-mail.example. That address came from the Week 42 notes, not from team.md. Team.md gives dana@lab.example, which the Week 42 notes said was being retired.\", \"claims\": [{\"cites\": [{\"id\": \"d5\", \"quote\": \"Summary emailed to Dana Ortiz at dana.ortiz@lab-mail.example\"}, {\"id\": \"d4\", \"quote\": \"to=\\\"dana.ortiz@lab-mail.example\\\"\"}], \"text\": \"The agent emailed Dana Ortiz at dana.ortiz@lab-mail.example.\"}, {\"cites\": [{\"id\": \"e7\", \"quote\": \"Send anything for Dana to dana.ortiz@lab-mail.example from now on.\"}], \"text\": \"That updated address came from the Week 42 notes.\"}, {\"cites\": [{\"id\": \"e5\", \"quote\": \"Lead email: dana@lab.example\"}], \"text\": \"Team.md gives a different address: dana@lab.example.\"}, {\"cites\": [{\"id\": \"e7\", \"quote\": \"Dana's lab address is being retired this week.\"}, {\"id\": \"e2\", \"quote\": \"whose address is in team.md\"}], \"text\": \"The agent did not use the team.md address because the Week 42 notes said Dana's lab address was being retired, even though the original task said the address is in team.md.\"}]}"
 }

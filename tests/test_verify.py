@@ -158,6 +158,132 @@ def test_malformed_answer_keeps_claims_and_answer_text_when_present():
     assert result["total"] == 2
 
 
+def _event(event_id: str, text: str) -> dict:
+    return {"kind": "event", "id": event_id, "step": 1, "role": "tool", "text": text}
+
+
+@pytest.mark.parametrize(
+    ("text", "cites"),
+    [
+        (
+            "The agent did not use the team.md address because the Week 42 notes said "
+            "Dana's lab address was being retired, even though the original task said "
+            "the address is in team.md.",
+            (
+                ("e7", "Dana's lab address is being retired this week."),
+                ("e2", "whose address is in team.md"),
+            ),
+        ),
+        (
+            "It read the plan so that it could ship the summary.",
+            (("e1", "Read the plan."), ("e2", "Ship the summary.")),
+        ),
+        (
+            "It read the plan so as to ship the summary.",
+            (("e1", "Read the plan."), ("e2", "Ship the summary.")),
+        ),
+        (
+            "It read the plan in order to ship the summary.",
+            (("e1", "Read the plan."), ("e2", "Ship the summary.")),
+        ),
+        (
+            "It read the plan in order that the summary could ship.",
+            (("e1", "Read the plan."), ("e2", "Ship the summary.")),
+        ),
+    ],
+)
+def test_causal_word_joining_unconnected_quotes_is_not_supported(text, cites):
+    """Both facts are quoted. The because / so that that joins them is not."""
+    ledger = [_event(event_id, quote) for event_id, quote in cites]
+    claim = _claim(text, *cites)
+    result = verify(ledger, _answer(claim))
+    assert result["ok"] == 0
+    assert result["supported"] == []
+    assert result["struck"] == [{"claim": claim, "reasons": ["motive not in quotes"]}]
+
+
+def test_negated_fact_is_not_the_motive_in_a_positive_quote():
+    quote = "The agent did use the team.md address because the note retired the address."
+    ledger = [_event("e1", quote)]
+    claim = _claim(
+        "The agent did not use the team.md address because the note retired the address.",
+        ("e1", quote),
+    )
+    result = verify(ledger, _answer(claim))
+    assert result["supported"] == []
+    assert result["struck"] == [{"claim": claim, "reasons": ["motive not in quotes"]}]
+
+
+def test_because_in_a_different_quote_does_not_connect_the_facts():
+    ledger = [
+        _event("e1", "The agent skipped team.md."),
+        _event("e2", "The address was retired because the domain lapsed."),
+    ]
+    claim = _claim(
+        "The agent skipped team.md because the address was retired.",
+        ("e1", "The agent skipped team.md."),
+        ("e2", "The address was retired because the domain lapsed."),
+    )
+    result = verify(ledger, _answer(claim))
+    assert result["struck"] == [{"claim": claim, "reasons": ["motive not in quotes"]}]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Owner: Rick.",
+        "The agent skipped team.md because the note said the address was retired.",
+        "It read the plan so that it could ship the summary.",
+        "It read the plan so as to ship the summary.",
+        "It read the plan in order to ship the summary.",
+        "It read the plan in order that the summary could ship.",
+    ],
+)
+def test_claim_that_only_restates_its_quote_stays_supported(text):
+    ledger = [_event("e1", text)]
+    claim = _claim(text, ("e1", text))
+    result = verify(ledger, _answer(claim))
+    assert result["ok"] == 1
+    assert result["struck"] == []
+    assert result["supported"] == [claim]
+
+
+def test_missing_quote_is_still_quote_not_found_when_the_claim_adds_because():
+    result = verify(
+        [_event("e4", "Owner: Rick.")],
+        _answer(_claim("It failed because the note said so.", ("e4", "no such sentence here"))),
+    )
+    assert result["struck"][0]["reasons"] == ["quote not found in e4"]
+
+
+def test_address_swap_why_strikes_the_unconnected_because():
+    """The checked-in explanation matches a fresh run of the checker. The model text is untouched."""
+    root = Path(__file__).resolve().parents[1] / "examples" / "spark-address_swap"
+    recorded = json.loads((root / "why.json").read_text(encoding="utf-8"))
+    ledger = [
+        json.loads(line)
+        for line in (root / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    fresh = verify(ledger, json.loads(recorded["raw"]))
+    assert fresh["total"] == 4
+    assert fresh["ok"] == 3
+    assert [claim["text"] for claim in fresh["supported"]] == [
+        "The agent emailed Dana Ortiz at dana.ortiz@lab-mail.example.",
+        "That updated address came from the Week 42 notes.",
+        "Team.md gives a different address: dana@lab.example.",
+    ]
+    assert len(fresh["struck"]) == 1
+    assert "because" in fresh["struck"][0]["claim"]["text"]
+    assert fresh["struck"][0]["reasons"] == ["motive not in quotes"]
+    assert recorded["answer"] == fresh["answer"]
+    assert recorded["supported"] == fresh["supported"]
+    assert recorded["struck"] == fresh["struck"]
+    assert recorded["ok"] == fresh["ok"]
+    assert recorded["total"] == fresh["total"]
+    assert "because the Week 42 notes" in recorded["raw"]
+
+
 def test_malformed_answer_with_no_claims_reports_one_struck_entry():
     result = verify(_ledger(), None)
     assert result == {

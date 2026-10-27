@@ -1,4 +1,9 @@
-"""Offline verifier for an explanation (SPEC 7.3): every cite must name a real record and quote it."""
+"""Offline verifier for an explanation (SPEC 7.3): every cite must name a real record and quote it.
+
+A quote that really appears still matches as a substring. A claim that then joins two
+quoted facts with a motive those quotes never connect (`because`, `so that`, and the
+same family) is struck.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +27,82 @@ def _norm(text: str) -> str:
 def _quote_in(quote: str, text: str) -> bool:
     needle = _norm(quote)
     return bool(needle) and needle in _norm(text)
+
+
+# Longer phrases first so "in order to" is not read as a shorter marker.
+_CAUSAL = re.compile(r"\b(?:in order that|in order to|so as to|so that|because)\b")
+_CLAUSE_BREAK = re.compile(r"[;]|(?<=[.!?])\s+")
+_TOKEN = re.compile(r"[a-z0-9]+(?:[.'’@_-][a-z0-9]+)*")
+
+
+def _tokens(text: str) -> list[str]:
+    return _TOKEN.findall(text)
+
+
+def _clause_before(text: str) -> str:
+    parts = _CLAUSE_BREAK.split(text)
+    return parts[-1].strip(" ,;:") if parts else ""
+
+
+def _clause_after(text: str) -> str:
+    parts = _CLAUSE_BREAK.split(text, maxsplit=1)
+    return parts[0].strip(" ,;:") if parts else ""
+
+
+def _causal_links(text: str) -> list[tuple[str, str, str]]:
+    """Each connective that sits between two facts, as (marker, left clause, right clause)."""
+    links: list[tuple[str, str, str]] = []
+    for match in _CAUSAL.finditer(text):
+        left = _clause_before(text[: match.start()])
+        right = _clause_after(text[match.end() :])
+        if left and right:
+            links.append((match.group(0), left, right))
+    return links
+
+
+def _tokens_in_order(needle: list[str], hay: list[str]) -> bool:
+    """True when `needle` is a contiguous token run inside `hay`."""
+    span = len(needle)
+    if span == 0:
+        return False
+    return any(hay[index : index + span] == needle for index in range(len(hay) - span + 1))
+
+
+def _quote_links(marker: str, left: str, right: str, quote: str) -> bool:
+    """The quote joins these facts when the same connective has each fact on its matching side.
+
+    The fact has to appear in order, so "did not use" is not grounded by "did use".
+    """
+    left_tokens = _tokens(left)
+    right_tokens = _tokens(right)
+    if not left_tokens or not right_tokens:
+        return False
+    for quoted_marker, quoted_left, quoted_right in _causal_links(quote):
+        if quoted_marker != marker:
+            continue
+        if _tokens_in_order(left_tokens, _tokens(quoted_left)) and _tokens_in_order(
+            right_tokens, _tokens(quoted_right)
+        ):
+            return True
+    return False
+
+
+def _motive_reason(claim: dict[str, Any]) -> str | None:
+    """A claim may not add a motive the quotes never connect.
+
+    Substring checks have already passed. `because` / `so that` (also `so as to`,
+    `in order to`, `in order that`) between two facts stays supported only when one
+    cited quote uses that same connective with both facts on the matching sides.
+    A claim that only restates a quote keeps that quote's connective and stays supported.
+    """
+    links = _causal_links(_norm(claim["text"]))
+    if not links:
+        return None
+    quotes = [_norm(cite["quote"]) for cite in claim["cites"]]
+    for marker, left, right in links:
+        if not any(_quote_links(marker, left, right, quote) for quote in quotes):
+            return "motive not in quotes"
+    return None
 
 
 def _is_claim(claim: Any) -> bool:
@@ -73,7 +154,12 @@ def _reasons(claim: dict[str, Any], index: dict[str, dict[str, Any]]) -> list[st
             reasons.append(f"quote too short for {cite['id']}")
         elif not _quote_in(cite["quote"], searchable(record)):
             reasons.append(f"quote not found in {cite['id']}")
-    return reasons
+    if reasons:
+        return reasons
+    motive = _motive_reason(claim)
+    if motive:
+        return [motive]
+    return []
 
 
 def verify(ledger: list[dict[str, Any]], answer: Any) -> dict[str, Any]:
@@ -82,6 +168,9 @@ def verify(ledger: list[dict[str, Any]], answer: Any) -> dict[str, Any]:
     Returns {"answer", "supported", "struck", "ok", "total"}. `supported` holds the claim
     objects that passed. `struck` holds {"claim": <claim object>, "reasons": [...]} for the
     rest. A malformed answer strikes every claim with `malformed answer` and does not raise.
+    Quotes that appear in the named record still match. A claim is still struck when it
+    joins two facts with because / so that (or so as to, in order to, in order that) and
+    no cited quote connects those facts, with reason `motive not in quotes`.
     """
     if not _well_formed(answer):
         return _malformed(answer)
