@@ -1,7 +1,8 @@
-"""Command-line interface (SPEC 8).
+"""Command-line interface (SPEC 8, §9 slice 5).
 
 `tag` turns a transcript into a ledger and `show` prints it as a table. `why` asks the model to explain one question
 against a ledger and prints the verified answer. `rivals` re-asks the model at every decision and stores the votes.
+`proxy` serves an OpenAI-compatible base URL, forwards chat completions to `--upstream`, and writes the same ledger.
 
 Usage errors make argparse exit with SystemExit, as usual. Other failures print to stderr and return 1. For the
 model commands, an API failure or a missing key returns 2. `why` returns 0 when at least one claim is supported and
@@ -24,6 +25,7 @@ import httpx
 
 from causeway import explain, ledger, rivals, steps, tagger, transcript
 from causeway.client import DEFAULT_BASE_URL, DEFAULT_MODEL, REASONING_EFFORTS, APIError, ChatClient
+from causeway.proxy import Proxy
 
 ACTION_WIDTH = 60
 ECHO_BADGE = "ECHO←"
@@ -297,6 +299,42 @@ def _cmd_view(args: argparse.Namespace, client: Any = None) -> int:
     return 0
 
 
+def _split_listen(text: str) -> tuple[str, int]:
+    """HOST:PORT. An IPv6 address is written [addr]:port."""
+    host, sep, port_text = text.rpartition(":")
+    if not sep or not host:
+        raise ValueError(f"--listen must be HOST:PORT, got {text!r}")
+    if host[0] == "[" and host[-1] == "]":
+        host = host[1:-1]
+    if not host:
+        raise ValueError(f"--listen must be HOST:PORT, got {text!r}")
+    try:
+        port = int(port_text)
+    except ValueError:
+        raise ValueError(f"--listen port must be an integer, got {port_text!r}") from None
+    if not 0 <= port <= 65535:
+        raise ValueError(f"--listen port out of range: {port}")
+    return host, port
+
+
+def _cmd_proxy(args: argparse.Namespace, client: Any = None) -> int:
+    """Serve until interrupted. Completions are forwarded to --upstream."""
+    try:
+        host, port = _split_listen(args.listen)
+        proxy = Proxy(args.upstream, args.output, run_id=args.run_id, model=args.model, watch=_watch_set(args))
+    except ValueError as exc:
+        return _fail(exc, 1)
+    try:
+        proxy.serve(host, port)
+    except KeyboardInterrupt:
+        return 0
+    except OSError as exc:
+        return _fail(exc, 1)
+    finally:
+        proxy.close()
+    return 0
+
+
 def _positive_int(text: str) -> int:
     try:
         value = int(text)
@@ -361,6 +399,15 @@ def build_parser() -> argparse.ArgumentParser:
     view_cmd.add_argument("--question", help="the question asked of `why`, shown in the Explain panel")
     view_cmd.add_argument("--title", help="page title (default: the run id)")
     view_cmd.set_defaults(func=_cmd_view)
+
+    proxy_cmd = commands.add_parser("proxy", help="record an agent by serving as its chat base URL")
+    proxy_cmd.add_argument("--upstream", required=True, help="upstream chat API base URL, the same shape as --base-url")
+    proxy_cmd.add_argument("-o", "--output", required=True, help="JSONL ledger to write")
+    proxy_cmd.add_argument("--listen", default="127.0.0.1:8765", help="host:port to bind (default 127.0.0.1:8765)")
+    proxy_cmd.add_argument("--run-id", default="r-1")
+    proxy_cmd.add_argument("--model", default="unknown", help="ledger model when a request omits one")
+    _add_watch_flag(proxy_cmd)
+    proxy_cmd.set_defaults(func=_cmd_proxy)
     return parser
 
 
@@ -368,6 +415,7 @@ def main(argv: Sequence[str] | None = None, client: Any = None) -> int:
     """Run the CLI with argv (default: sys.argv[1:]) and return the exit code.
 
     client, when given, replaces the network ChatClient for `why` and `rivals`. Tests use this seam.
+    `proxy` forwards to --upstream on its own connection.
     """
     parser = build_parser()
     args = parser.parse_args(argv)
