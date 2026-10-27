@@ -99,6 +99,8 @@ Matching, in order, stopping at the first level that finds anything:
 2. `casefold`: substring after `casefold()` on both.
 3. `fuzzy`: only for needles of 12 or more characters. Split the needle on non-alphanumerics into tokens of 4 or more characters. A source matches if at least 60% of the tokens appear in it (casefolded).
 
+A tool result is left out of this search when its whole text is `error: no such file: <path>`, aside from trailing whitespace. The tool is reporting that the path is absent. The echo of the name is not evidence the path existed, so it cannot satisfy an exact, casefold, or parts match. An earlier decision argument equal to that path (exact or after casefold) whose own tag is `UNSOURCED` is left out for the same reason: repeating the invention stays `UNSOURCED`. A directory listing, a file body, or a result such as `wrote 45 bytes to <path>` is still searched, and a path that appears there keeps its `IN` or `CARRY·k` tag.
+
 At the winning level, choose the source by priority (§5.3), then by recency (newest first).
 
 ### 5.3 Leaf tag
@@ -129,6 +131,8 @@ Fuzzy matching (§5.2 level 3) applies only to needles that contain whitespace. 
 Agents build paths from parts: they list `notes/`, see `a.md`, and read `notes/a.md`. The joined string appears nowhere, so whole-string matching wrongly calls it `UNSOURCED`.
 
 A path-like needle (it contains `/` or `\`) that finds no source at the exact or casefold level gets one more level, `parts`, before fuzzy. Split it on `/` and `\`, and drop empty segments, `.` and `..`. If every remaining segment is found (exact, then casefold) in some prior record, the leaf takes its source and tag from where the **last segment** (the basename) was found, with `"match": "parts"`. A segment of 2 characters or fewer counts as found without a source, so `C:` and `x` don't block a match. If any longer segment is found nowhere, the leaf is `UNSOURCED` as before.
+
+The basename has to be found in a record that still counts under §5.2. A basename that shows up only inside a missing-file echo, or only inside an `UNSOURCED` argument the tool reported missing, is not found, and the leaf stays `UNSOURCED`.
 
 ### 5.4c Prose and atoms
 

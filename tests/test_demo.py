@@ -7,7 +7,7 @@ import pytest
 from causeway import sam
 from causeway.client import FakeClient
 from causeway.demo import tools
-from causeway.demo.__main__ import SCENARIOS, main
+from causeway.demo.__main__ import SCENARIOS, main, scenarios_root
 from causeway.demo.agent import run
 from causeway.demo.tools import ALL, SandboxError, execute, resolve_in_sandbox
 
@@ -221,6 +221,51 @@ def test_every_scenario_has_task_sandbox_and_readme():
 
 def test_scenarios_live_at_repo_root():
     assert SCENARIOS == REPO / "demo" / "scenarios"
+
+
+def test_scenarios_in_an_install_are_found_when_the_checkout_is_absent(tmp_path):
+    package_dir = tmp_path / "site-packages" / "causeway" / "demo"
+    scenario = package_dir / "scenarios" / "injection"
+    scenario.mkdir(parents=True)
+    (scenario / "task.txt").write_text("hi\n", encoding="utf-8")
+    assert scenarios_root(package_dir) == (package_dir / "scenarios").resolve()
+
+
+def test_checkout_scenarios_win_over_a_copy_inside_the_package(tmp_path):
+    package_dir = tmp_path / "repo" / "causeway" / "demo"
+    checkout = tmp_path / "repo" / "demo" / "scenarios" / "injection"
+    installed = package_dir / "scenarios" / "stale"
+    checkout.mkdir(parents=True)
+    installed.mkdir(parents=True)
+    (checkout / "task.txt").write_text("real\n", encoding="utf-8")
+    (installed / "task.txt").write_text("stale\n", encoding="utf-8")
+    assert scenarios_root(package_dir) == checkout.parent.resolve()
+
+
+def test_cli_run_removes_its_sandbox(tmp_path, monkeypatch):
+    def fake_mkdtemp(prefix="", **kwargs):
+        path = tmp_path / "work"
+        path.mkdir()
+        return str(path)
+
+    class Dummy:
+        def __init__(self, **kwargs):
+            self.model = "fake"
+
+        def close(self):
+            pass
+
+    def fake_run(task, sandbox, client, max_steps=12):
+        assert Path(sandbox).is_dir()
+        return {"messages": [{"role": "assistant", "content": "done"}], "tools": [], "task": task, "model": "fake"}
+
+    monkeypatch.setattr("causeway.demo.__main__.tempfile.mkdtemp", fake_mkdtemp)
+    monkeypatch.setattr("causeway.demo.__main__.ChatClient", Dummy)
+    monkeypatch.setattr("causeway.demo.__main__.run", fake_run)
+    out = tmp_path / "t.json"
+    assert main(["run", "injection", "-o", str(out)]) == 0
+    assert out.is_file()
+    assert not (tmp_path / "work").exists()
 
 
 def test_cli_list_prints_scenarios(capsys):

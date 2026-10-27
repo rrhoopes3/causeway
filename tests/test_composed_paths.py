@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from causeway import tagger
 from causeway.transcript import to_ledger
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -140,6 +141,85 @@ def test_invented_path_atom_in_prose_stays_unsourced():
         ("body", "PROSE", None, None),
         ("body~0", "UNSOURCED", None, None),
     ]
+
+
+def test_missing_file_echo_does_not_source_a_retried_or_composed_path():
+    """A tool error that only echoes a missing path is not evidence the path existed (§5.2, §5.4b2)."""
+    messages = [
+        user("Find the sensor board."),
+        calls(("c1", "list_dir", {"path": "."})),
+        tool("c1", "notes/\nteam.md"),
+        calls(("c2", "segment_image", {"path": "sensor_board.jpg", "prompt": "sensor board"})),
+        tool("c2", "error: no such file: sensor_board.jpg"),
+        calls(("c3", "read_file", {"path": "sensor_board.jpg"})),
+        tool("c3", "error: no such file: sensor_board.jpg"),
+        calls(("c4", "segment_image", {"path": "notes/sensor_board.jpg", "prompt": "sensor board"})),
+    ]
+    records = to_ledger(messages)
+    decisions = decisions_of(records)
+    assert summary(decisions["d2"]["causes"]) == [
+        ("path", "UNSOURCED", None, None),
+        ("prompt", "GOAL", "e1", "exact"),
+    ]
+    assert decisions["d2"]["tag"] == "UNSOURCED"
+    assert summary(decisions["d3"]["causes"]) == [("path", "UNSOURCED", None, None)]
+    assert decisions["d3"]["tag"] == "UNSOURCED"
+    assert summary(decisions["d4"]["causes"]) == [
+        ("path", "UNSOURCED", None, None),
+        ("prompt", "GOAL", "e1", "exact"),
+    ]
+    assert decisions["d4"]["tag"] == "UNSOURCED"
+    assert tagger.tag_ledger(records) == records
+
+
+def test_missing_file_echo_casefold_does_not_source_the_retried_path():
+    messages = [
+        user("Go."),
+        calls(("c1", "read_file", {"path": "Sensor_Board.JPG"})),
+        tool("c1", "error: no such file: sensor_board.jpg"),
+        calls(("c2", "read_file", {"path": "sensor_board.jpg"})),
+    ]
+    assert summary(causes_of(messages, "d1")) == [("path", "UNSOURCED", None, None)]
+    assert summary(causes_of(messages, "d2")) == [("path", "UNSOURCED", None, None)]
+
+
+def test_listing_still_sources_exact_and_parts_beside_a_missing_echo():
+    messages = [
+        user("Summarize the project notes."),
+        calls(("c1", "list_dir", {"path": "."})),
+        tool("c1", "a.md\nnotes/"),
+        calls(("c2", "read_file", {"path": "missing.jpg"})),
+        tool("c2", "error: no such file: missing.jpg"),
+        calls(("c3", "read_file", {"path": "a.md"})),
+        tool("c3", "ok"),
+        calls(("c4", "read_file", {"path": "notes/a.md"})),
+    ]
+    decisions = decisions_of(to_ledger(messages))
+    assert summary(decisions["d3"]["causes"]) == [("path", "CARRY·1", "e2", "exact")]
+    assert summary(decisions["d4"]["causes"]) == [("path", "CARRY·2", "e2", "parts")]
+
+
+def test_file_body_and_write_result_still_source_a_path():
+    """A file body and a write confirmation stay sources. Only the pure missing-file echo does not."""
+    body = "error: no such file: sensor_board.jpg\nThe board photo is filed under that name."
+    messages = [
+        user("Take notes."),
+        calls(("c1", "read_file", {"path": "notes/a.md"})),
+        tool("c1", body),
+        calls(("c2", "read_file", {"path": "sensor_board.jpg"})),
+        tool("c2", "error: no such file: inventory.txt"),
+        calls(("c3", "write_file", {"path": "inventory.txt", "content": "lab notes"})),
+        tool("c3", "wrote 9 bytes to inventory.txt"),
+        calls(("c4", "read_file", {"path": "inventory.txt"})),
+    ]
+    decisions = decisions_of(to_ledger(messages))
+    assert summary(decisions["d2"]["causes"]) == [("path", "IN", "e2", "exact")]
+    assert summary(decisions["d3"]["causes"]) == [
+        ("path", "UNSOURCED", None, None),
+        ("content", "UNSOURCED", None, None),
+    ]
+    assert decisions["d3"]["tag"] == "UNSOURCED"
+    assert summary(decisions["d4"]["causes"]) == [("path", "IN", "e4", "exact")]
 
 
 def test_real_spark_run_has_no_unsourced_leaf_and_send_is_traced():

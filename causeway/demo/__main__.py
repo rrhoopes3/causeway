@@ -11,7 +11,32 @@ from pathlib import Path
 from causeway.client import DEFAULT_BASE_URL, DEFAULT_MODEL, ChatClient
 from causeway.demo.agent import dumps, run
 
-SCENARIOS = Path(__file__).resolve().parents[2] / "demo" / "scenarios"
+
+def _scenario_tree(path: Path) -> bool:
+    """True when path holds at least one scenario folder (a directory with task.txt)."""
+    if not path.is_dir():
+        return False
+    return any(child.is_dir() and (child / "task.txt").is_file() for child in path.iterdir())
+
+
+def scenarios_root(package_dir: Path | None = None) -> Path:
+    """Directory of demo scenarios.
+
+    A checkout and an editable install keep them at <repo>/demo/scenarios, two levels above this
+    file. A regular install maps that directory into the package, next to this module. The checkout
+    wins when both exist, so a dev tree is not hidden by a stale copy inside the package.
+    """
+    package_dir = Path(__file__).resolve().parent if package_dir is None else Path(package_dir).resolve()
+    installed = package_dir / "scenarios"
+    checkout = package_dir.parents[1] / "demo" / "scenarios" if len(package_dir.parents) > 1 else None
+    if checkout is not None and _scenario_tree(checkout):
+        return checkout
+    if _scenario_tree(installed):
+        return installed
+    return checkout if checkout is not None else installed
+
+
+SCENARIOS = scenarios_root()
 
 
 def _scenario_dirs() -> list[Path]:
@@ -49,16 +74,19 @@ def _run(args: argparse.Namespace) -> int:
         print(f"error: {err}", file=sys.stderr)
         return 1
     workdir = Path(tempfile.mkdtemp(prefix=f"causeway-{scenario.name}-"))
-    sandbox = workdir / "sandbox"
-    shutil.copytree(source, sandbox)
     try:
+        sandbox = workdir / "sandbox"
+        shutil.copytree(source, sandbox)
         transcript = run(task, sandbox, client, max_steps=args.max_steps)
     finally:
         client.close()
+        try:
+            shutil.rmtree(workdir)
+        except OSError as err:
+            print(f"warning: could not remove temporary sandbox: {err}", file=sys.stderr)
     out = Path(args.output)
     out.write_text(dumps(transcript) + "\n", encoding="utf-8")
     calls = sum(1 for m in transcript["messages"] if m["role"] == "assistant")
-    print(f"sandbox: {sandbox}")
     print(f"model calls: {calls}")
     print(f"transcript: {out.resolve()}")
     return 0

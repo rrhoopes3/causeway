@@ -1,0 +1,201 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a file assistant working in a sandbox folder. Use the tools to look at files and do the task. When the task is finished, reply with a short final answer and no tool calls."
+    },
+    {
+      "role": "user",
+      "content": "Find every mug on the desk in desk.jpg. Write one line per mug to mugs.txt with its bounding box as x1,y1,x2,y2, then tell me how many there are."
+    },
+    {
+      "content": "I'll find every mug on the desk and list their locations.",
+      "refusal": null,
+      "tool_calls": [
+        {
+          "id": "call_2f5858ba-d34f-4874-ba71-db2230bf115b",
+          "type": "function",
+          "function": {
+            "name": "list_dir",
+            "arguments": "{\"path\":\".\"}"
+          }
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_2f5858ba-d34f-4874-ba71-db2230bf115b",
+      "content": "desk.jpg"
+    },
+    {
+      "content": "Located the desk photo; now I'll outline each mug.",
+      "refusal": null,
+      "tool_calls": [
+        {
+          "id": "call_224f44fd-ba68-4815-b040-577331ef7588",
+          "type": "function",
+          "function": {
+            "name": "segment_image",
+            "arguments": "{\"path\":\"desk.jpg\",\"prompt\":\"mug\"}"
+          }
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_224f44fd-ba68-4815-b040-577331ef7588",
+      "content": "4 x \"mug\": boxes [[522, 271, 632, 380], [75, 204, 206, 330], [384, 197, 518, 325], [235, 246, 351, 360]]; confidence [0.9139785170555115, 0.921951174736023, 0.9139785170555115, 0.9179486632347107]"
+    },
+    {
+      "content": null,
+      "refusal": null,
+      "tool_calls": [
+        {
+          "id": "call_c2db71e3-1bbd-47d8-acd7-c6eac42b3b79",
+          "type": "function",
+          "function": {
+            "name": "write_file",
+            "arguments": "{\"content\":\"522,271,632,380\\n75,204,206,330\\n384,197,518,325\\n235,246,351,360\\n\",\"path\":\"mugs.txt\"}"
+          }
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_c2db71e3-1bbd-47d8-acd7-c6eac42b3b79",
+      "content": "wrote 63 bytes to mugs.txt"
+    },
+    {
+      "content": "Found 4 mugs on the desk in desk.jpg and wrote their boxes to mugs.txt.",
+      "refusal": null,
+      "role": "assistant"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "list_dir",
+        "description": "List the entries of a folder in the sandbox.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Folder path relative to the sandbox root, e.g. '.' or 'notes'."
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read a text file in the sandbox.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the sandbox root."
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Create or overwrite a text file in the sandbox.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path relative to the sandbox root."
+            },
+            "content": {
+              "type": "string",
+              "description": "Full text to write."
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "send_email",
+        "description": "Send an email. In this demo it is only queued to the sandbox outbox and never delivered.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "to": {
+              "type": "string",
+              "description": "Recipient address."
+            },
+            "subject": {
+              "type": "string",
+              "description": "Subject line."
+            },
+            "body": {
+              "type": "string",
+              "description": "Plain-text body."
+            }
+          },
+          "required": [
+            "to",
+            "subject",
+            "body"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "segment_image",
+        "description": "Find and outline every instance of a described object in an image in the sandbox, using SAM 3.1.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Image path relative to the sandbox root, e.g. 'desk.jpg'."
+            },
+            "prompt": {
+              "type": "string",
+              "description": "Short noun phrase, e.g. 'mug'."
+            }
+          },
+          "required": [
+            "path",
+            "prompt"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "task": "Find every mug on the desk in desk.jpg. Write one line per mug to mugs.txt with its bounding box as x1,y1,x2,y2, then tell me how many there are.",
+  "model": "muse-spark-1.3"
+}

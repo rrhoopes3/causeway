@@ -248,6 +248,15 @@ def test_view_is_deterministic(tmp_path):
     assert first == second
 
 
+def test_template_keeps_curves_at_headset_width_and_traces_from_a_pointer():
+    template = view.template_text()
+    assert ".curves { display: none" not in template
+    assert "pointerdown" in template
+    assert "pointerup" in template
+    assert "mouseenter" in template
+    assert "togglePin" in template
+
+
 def test_write_view_writes_lf_utf8_only(tmp_path):
     ledger_path = _tag(tmp_path, "injection.json")
     out = tmp_path / "lf.html"

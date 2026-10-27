@@ -3,7 +3,8 @@
 Each non-trivial leaf of a decision's arguments is searched for in the records that came
 before the decision. The chosen source gives the leaf its tag. The decision takes the
 highest-priority tag among its leaves. A prose leaf (§5.4c) is not searched as a whole.
-Its atoms (URLs, emails, paths, numbers) are searched instead.
+Its atoms (URLs, emails, paths, numbers) are searched instead. A tool error that only
+reports a missing path is not a source for that path (§5.2).
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ _TOKEN = re.compile(r"[^\W\d_]{4,}|\d{2,}")
 URL_TRAILING = ".,;:)]}'\""
 PATH_LEADING = "\"'([{<"
 PATH_TRAILING = "\"')]}>,;:!?."
+_MISSING_FILE = re.compile(r"^error: no such file: (?P<path>[^\r\n]*\S)\s*$")
 
 
 def canon(args: Any) -> str:
@@ -84,20 +86,81 @@ def is_goal(record: dict) -> bool:
     return record["kind"] == "event" and record["step"] == 1 and record["role"] in GOAL_ROLES
 
 
-def search_texts(record: dict) -> list[str]:
+def missing_file_path(record: dict) -> str | None:
+    """The path named by a tool result that only reports the file is absent, else None.
+
+    The whole text must be `error: no such file: <path>`. A listing, a file body, or a write confirmation does not
+    have that shape, so those texts stay searchable (§5.2).
+    """
+    if record.get("kind") != "event" or record.get("role") != "tool":
+        return None
+    match = _MISSING_FILE.match((record.get("text") or "").strip())
+    if match is None:
+        return None
+    return match.group("path").strip() or None
+
+
+def _missing_names(sources: list[tuple[int, dict]]) -> set[str]:
+    """Casefolded paths a tool result has already reported missing."""
+    names = set()
+    for _, record in sources:
+        path = missing_file_path(record)
+        if path:
+            names.add(path.casefold())
+    return names
+
+
+def _skipped_leaves(record: dict, missing: set[str]) -> frozenset[str]:
+    """Casefolded UNSOURCED argument values a tool has reported missing.
+
+    Repeating one is still an invention. A leaf that was tagged from a real source is kept.
+    """
+    if not missing or record.get("kind") != "decision":
+        return frozenset()
+    skipped = set()
+    for cause in record.get("causes") or []:
+        if cause.get("tag") != "UNSOURCED":
+            continue
+        value = cause.get("value")
+        if isinstance(value, str) and value.casefold() in missing:
+            skipped.add(value.casefold())
+    return frozenset(skipped)
+
+
+def search_texts(record: dict, *, skip: frozenset[str] | None = None) -> list[str]:
     """Separate texts a record offers as sources, empty ones dropped.
 
     An event offers its text. A decision offers its text, then the decoded value of each leaf of each action,
     trivial ones included, in needle form. Booleans are skipped because no needle can be one. Serialized JSON is
-    never searched, so escapes and key names cannot match.
+    never searched, so escapes and key names cannot match. A tool result whose whole text is
+    `error: no such file: <path>` offers nothing: the echo is not evidence the path existed (§5.2). `skip` drops
+    casefolded needles, used for an earlier UNSOURCED argument of that same path.
     """
-    texts = [record.get("text") or ""]
-    if record["kind"] == "decision":
-        for action in record["actions"]:
+    skipped = skip or frozenset()
+    texts: list[str] = []
+    if missing_file_path(record) is None:
+        raw = record.get("text") or ""
+        if raw:
+            texts.append(raw)
+    if record.get("kind") == "decision":
+        for action in record.get("actions") or []:
             for _, value in flatten(action["args"]):
-                if not isinstance(value, bool):
-                    texts.append(needle_of(value))
-    return [text for text in texts if text]
+                if isinstance(value, bool):
+                    continue
+                needle = needle_of(value)
+                if not needle or needle.casefold() in skipped:
+                    continue
+                texts.append(needle)
+    return texts
+
+
+def _corpus(sources: list[tuple[int, dict]]) -> list[tuple[int, dict, list[str]]]:
+    """Search texts for each source, with missing-file echoes and retried inventions removed (§5.2)."""
+    missing = _missing_names(sources)
+    return [
+        (pos, record, search_texts(record, skip=_skipped_leaves(record, missing)))
+        for pos, record in sources
+    ]
 
 
 def source_tag(source: dict, n: int) -> str:
@@ -217,9 +280,10 @@ def find_source(needle: str, n: int, sources: list[tuple[int, dict]], numeric: b
     Levels are tried in order: exact, casefold, then parts for a path-like needle (contains / or \\, §5.4b2), then
     fuzzy. Fuzzy applies only to needles of 12 or more characters that contain whitespace (§5.4b), and never to
     numbers. The first level with any hit wins. Among the hits of a level, the highest-priority tag wins, then the
-    most recent record. Returns (source record, level), or None.
+    most recent record. A missing-file echo, and an UNSOURCED argument of that path, are not searched (§5.2).
+    Returns (source record, level), or None.
     """
-    texts = [(pos, record, search_texts(record)) for pos, record in sources]
+    texts = _corpus(sources)
     for level in ("exact", "casefold"):
         record = _best(level, needle, numeric, texts, n)
         if record is not None:
@@ -295,9 +359,9 @@ def prose_sources(tokens: set[str], sources: list[tuple[int, dict]]) -> list[str
     if not tokens:
         return []
     scored = []
-    for pos, record in sources:
-        texts = [text.casefold() for text in search_texts(record)]
-        count = sum(any(token in text for text in texts) for token in tokens)
+    for pos, record, texts in _corpus(sources):
+        folded = [text.casefold() for text in texts]
+        count = sum(any(token in text for text in folded) for token in tokens)
         if count * 5 >= len(tokens):
             scored.append((count, pos, record["id"]))
     scored.sort(key=lambda item: (-item[0], -item[1]))
@@ -389,9 +453,11 @@ def tag_ledger(records: list[dict], watch: Iterable[str] = ()) -> list[dict]:
     latest: dict[tuple[tuple[str, str], ...], str] = {}
     for pos, record in enumerate(records):
         if record["kind"] == "decision":
-            tagged.append(_tag_decision(record, sources, latest, names))
+            stored = _tag_decision(record, sources, latest, names)
         else:
-            tagged.append(dict(record))
+            stored = dict(record)
+        tagged.append(stored)
+        # Keep the tagged decision so a later step can see that an argument was UNSOURCED (§5.2).
         if record["kind"] in ("event", "decision"):
-            sources.append((pos, record))
+            sources.append((pos, stored))
     return tagged

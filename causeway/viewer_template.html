@@ -90,6 +90,7 @@ h1 { margin: 4px 0 6px; font-size: 24px; font-weight: 600; letter-spacing: 0.01e
   color: var(--ink);
   opacity: var(--fade, 1);
   cursor: pointer;
+  touch-action: manipulation;
   outline: none;
   transition: opacity 0.18s, box-shadow 0.18s, background 0.18s;
 }
@@ -230,10 +231,9 @@ pre.actions { color: #f3e5c8; }
 
 @media (max-width: 820px) {
   .wrap { padding: 16px 16px 72px; }
-  .stage { padding-right: 0; }
+  /* Curves stay up at headset width. The desktop gutter still gives a trace room. */
   .step { grid-template-columns: minmax(0, 1fr); row-gap: 12px; }
   .track { flex-basis: 120px; }
-  .curves { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .chip[data-tag="UNSOURCED"], .badge.tag[data-tag="UNSOURCED"], .rec.flash { animation: none; }
@@ -663,6 +663,12 @@ pre.actions { color: #f3e5c8; }
 
     chip.addEventListener('mouseenter', function () { setHover({ type: 'cause', id: cid }); });
     chip.addEventListener('mouseleave', function () { setHover(null); });
+    // A headset pointer and a finger don't hover. Pressing traces; click still pins.
+    chip.addEventListener('pointerdown', function () { setHover({ type: 'cause', id: cid }); });
+    chip.addEventListener('pointerup', function (e) {
+      if (e.pointerType !== 'mouse') setHover(null);
+    });
+    chip.addEventListener('pointercancel', function () { setHover(null); });
     chip.addEventListener('focus', function () { setHover({ type: 'cause', id: cid }); });
     chip.addEventListener('blur', function () { setHover(null); });
     chip.addEventListener('click', function (e) {
