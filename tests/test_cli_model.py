@@ -68,11 +68,11 @@ def test_why_prints_answer_checks_strikes_and_total_then_exits_0(tmp_path, capsy
     assert capsys.readouterr().out == (
         "The agent read plan-v2.md because you asked which plan is newest.\n"
         "\n"
-        "✓ You asked which plan is newest.  [e2]\n"
-        "✓ It first listed /work/notes.  [d1]\n"
+        "✓ quote found: You asked which plan is newest.  [e2]\n"
+        "✓ quote found: It first listed /work/notes.  [d1]\n"
         "✗ The agent read notes.md out of habit.  — unknown id e99\n"
         "\n"
-        "verified 2/3 claims\n"
+        "quote found for 2/3 claims\n"
     )
 
 
@@ -89,13 +89,13 @@ def test_why_exits_3_when_no_claim_is_supported(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "✗ Out of habit.  — no citations" in out
     assert "✗ Made up.  — unknown id e99" in out
-    assert out.endswith("verified 0/2 claims\n")
+    assert out.endswith("quote found for 0/2 claims\n")
 
 
 def test_why_with_no_claims_at_all_exits_3(tmp_path, capsys):
     run = _tag_explore(tmp_path)
     assert main(["why", str(run), QUESTION], client=FakeClient([_answer_response("No idea.", [])])) == 3
-    assert capsys.readouterr().out.endswith("verified 0/0 claims\n")
+    assert capsys.readouterr().out.endswith("quote found for 0/0 claims\n")
 
 
 def test_why_reply_that_is_not_json_is_a_malformed_answer_exit_3(tmp_path, capsys):
@@ -104,7 +104,7 @@ def test_why_reply_that_is_not_json_is_a_malformed_answer_exit_3(tmp_path, capsy
     out = capsys.readouterr().out
     assert "(no answer: the reply did not match the answer schema)" in out
     assert "✗ (no claim)  — malformed answer" in out
-    assert out.endswith("verified 0/1 claims\n")
+    assert out.endswith("quote found for 0/1 claims\n")
 
 
 def test_why_sends_the_question_and_requested_effort(tmp_path):
@@ -134,7 +134,7 @@ def test_why_json_writes_the_full_result_as_utf8_indent_2(tmp_path, capsys):
     result = json.loads(raw)
     assert result["ok"] == 1 and result["total"] == 1
     assert result["supported"][0]["text"] == "Café order."
-    assert set(result) == {"answer", "supported", "struck", "ok", "total", "raw"}
+    assert set(result) == {"answer", "supported", "unproven", "struck", "ok", "total", "raw"}
 
 
 def test_why_json_is_written_even_when_no_claim_is_supported(tmp_path):
@@ -178,8 +178,23 @@ def test_format_why_on_a_hand_built_result():
         "total": 2,
     }
     assert format_why(result) == (
-        "Yes.\n\n✓ A.  [e1, d2]\n✗ B.  — quote too short for e1; quote not found in d2\n\nverified 1/2 claims\n"
+        "Yes.\n\n✓ quote found: A.  [e1, d2]\n✗ B.  — quote too short for e1; quote not found in d2\n\nquote found for 1/2 claims\n"
     )
+
+
+def test_format_why_shows_an_absence_claim_as_not_proof():
+    result = {
+        "answer": "No.",
+        "supported": [],
+        "unproven": [{"claim": {"text": "No mail went to x.", "cites": []}, "reasons": ["claims an absence"]}],
+        "struck": [],
+        "ok": 0,
+        "total": 1,
+    }
+    out = format_why(result)
+    assert "? not proof: No mail went to x.  (claims an absence)" in out
+    assert "verified" not in out
+    assert out.endswith("quote found for 0/1 claims\n")
 
 
 # rivals

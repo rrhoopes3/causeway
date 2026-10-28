@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from causeway import sam
-from causeway.client import APIError, load_api_key
+from causeway.client import DEFAULT_BASE_URL, APIError, is_meta_https, load_api_key
 
 MAX_READ_BYTES = 200_000
 OUTBOX = "outbox.jsonl"
@@ -53,14 +54,20 @@ def list_dir(sandbox: Path, path: str) -> str:
 
 
 def read_file(sandbox: Path, path: str) -> str:
-    """Read a UTF-8 text file inside the sandbox (truncated past 200 KB)."""
+    """Read a UTF-8 text file inside the sandbox (truncated past 200 KB).
+
+    At most MAX_READ_BYTES + 1 bytes are read, so a huge file is never loaded whole. A multi-byte character cut by
+    the limit is dropped rather than reported as a decoding error.
+    """
     target = resolve_in_sandbox(sandbox, path)
     if not target.is_file():
         return f"error: no such file: {path}"
-    data = target.read_bytes()
+    with target.open("rb") as handle:
+        data = handle.read(MAX_READ_BYTES + 1)
     truncated = len(data) > MAX_READ_BYTES
+    decoder = codecs.getincrementaldecoder("utf-8")()
     try:
-        text = data[:MAX_READ_BYTES].decode("utf-8")
+        text = decoder.decode(data[:MAX_READ_BYTES], final=not truncated)
     except UnicodeDecodeError:
         return f"error: not UTF-8 text: {path}"
     return text + ("\n[truncated]" if truncated else "")
@@ -87,16 +94,22 @@ def send_email(sandbox: Path, to: str, subject: str, body: str) -> str:
     return "queued"
 
 
-def segment_image(sandbox: Path, path: str, prompt: str) -> str:
-    """Segment `prompt` in an image inside the sandbox with SAM 3.1 and summarise the result."""
+def segment_image(sandbox: Path, path: str, prompt: str, *, base_url: str = DEFAULT_BASE_URL) -> str:
+    """Segment `prompt` in an image inside the sandbox with SAM 3.1 and summarise the result.
+
+    The request goes to base_url (the demo's --base-url). The stored MODEL_API_KEY is sent only to
+    https://api.meta.ai; another server is called without it. The model cannot set base_url: the agent's tool
+    calls go through tools_for(), which binds it.
+    """
     target = resolve_in_sandbox(sandbox, path)
     if not target.is_file():
         return f"error: no such file: {path}"
-    key = load_api_key()
-    if not key:
+    meta = is_meta_https(base_url)
+    key = load_api_key() if meta else None
+    if meta and not key:
         return "error: MODEL_API_KEY is not set, so SAM 3.1 cannot be called"
     try:
-        records = sam.segment(str(target), prompt, api_key=key)
+        records = sam.segment(str(target), prompt, api_key=key or "", base_url=base_url)
     except APIError as err:
         return f"error: SAM 3.1 request failed: HTTP {err.status}: {err.body[:300]}"
     if not records:
@@ -173,6 +186,17 @@ SEGMENT_IMAGE = Tool(
 )
 
 ALL: tuple[Tool, ...] = (LIST_DIR, READ_FILE, WRITE_FILE, SEND_EMAIL, SEGMENT_IMAGE)
+
+
+def tools_for(base_url: str = DEFAULT_BASE_URL) -> tuple[Tool, ...]:
+    """ALL, with segment_image sending its SAM 3.1 request to base_url. A closure, not functools.partial, so a
+    base_url argument from the model is rejected as a bad argument instead of overriding the bound one."""
+
+    def bound_segment_image(sandbox: Path, path: str, prompt: str) -> str:
+        return segment_image(sandbox, path, prompt, base_url=base_url)
+
+    segment = Tool(SEGMENT_IMAGE.name, SEGMENT_IMAGE.schema, bound_segment_image)
+    return tuple(segment if tool.name == SEGMENT_IMAGE.name else tool for tool in ALL)
 
 
 def execute(sandbox: Path, name: str, arguments: str, tools: tuple[Tool, ...] = ALL) -> str:

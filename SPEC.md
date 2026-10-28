@@ -12,7 +12,7 @@ Causeway answers it mechanically where it can and with a checked model where it 
 
 - **Cause tags (mechanical, no model).** For every argument of every tool call, find which earlier record it came from. An argument that came from nowhere is flagged `UNSOURCED`, which is a cheap, model-free hallucination detector.
 - **Rivals (sampled).** Re-ask the model at a step *k* times and count what else it would have done. A step it won by one vote is a near miss.
-- **Explanations (Muse Spark, verified).** The whole ledger goes into Spark's 1M-token context. Spark must answer in a fixed JSON schema in which every claim cites record ids with verbatim quotes. The verifier checks each quote against the cited record. Unsupported claims are struck, not shown as fact.
+- **Explanations (Muse Spark, quote-checked).** The whole ledger goes into Spark's 1M-token context. Spark must answer in a fixed JSON schema in which every claim cites record ids with verbatim quotes. The verifier checks that each quote is in the cited record. Claims whose quotes are missing are struck, not shown as fact. A found quote shows the record says it, not that the claim follows (§7.3).
 
 The idea comes from ConshusBot, a private research loop that tags every workspace ignition with its cause (`IN`, `CARRY·k`, `ECHO`). No ConshusBot code is used here. Everything in this repo was written during the hackathon.
 
@@ -95,11 +95,13 @@ Candidate sources are every event with `step <= n`, plus earlier decisions, all 
 
 Matching, in order, stopping at the first level that finds anything:
 
-1. `exact`: the needle is a substring of the source text.
-2. `casefold`: substring after `casefold()` on both.
+1. `exact`: the needle is in the source text.
+2. `casefold`: the same after `casefold()` on both.
 3. `fuzzy`: only for needles of 12 or more characters. Split the needle on non-alphanumerics into tokens of 4 or more characters. A source matches if at least 60% of the tokens appear in it (casefolded).
 
-A tool result is left out of this search when its whole text is `error: no such file: <path>`, aside from trailing whitespace. The tool is reporting that the path is absent. The echo of the name is not evidence the path existed, so it cannot satisfy an exact, casefold, or parts match. An earlier decision argument equal to that path (exact or after casefold) whose own tag is `UNSOURCED` is left out for the same reason: repeating the invention stays `UNSOURCED`. A directory listing, a file body, or a result such as `wrote 45 bytes to <path>` is still searched, and a path that appears there keeps its `IN` or `CARRY·k` tag.
+A tool result is left out of this search when its whole text is `error: <reason>: <path>`, aside from trailing whitespace and case, where the reason is one of: `no such file`, `no such directory`, `no such file or directory`, `not a directory`, `not a file`, `is a directory`, `file not found`, `not found`, `does not exist`, `path escapes the sandbox`, `absolute paths are not allowed`. The tool is reporting that the path is absent or unusable. The echo of the name is not evidence the path existed, so it cannot satisfy an exact, casefold, or parts match. An error that names a real file, such as `error: not UTF-8 text: <path>`, is still searched. An earlier decision argument equal to that path (exact or after casefold) whose own tag is `UNSOURCED` is left out for the same reason: repeating the invention stays `UNSOURCED`. The path is also blanked out of that earlier decision's own text, so a sentence like "Let me read sensor_board.jpg" does not turn the retry into `SELF`. The rest of the sentence is still searched. A directory listing, a file body, or a result such as `wrote 45 bytes to <path>` is still searched, and a path that appears there keeps its `IN` or `CARRY·k` tag.
+
+**Identifiers match only as whole tokens.** A needle is an identifier if it contains a digit or one of `@ / \ . : _ % + -`, such as a path, an address, a URL or a key. It matches only where the characters on both sides of it in the source do not continue it. A letter, digit, `_`, `-`, `@`, `%` or `+` continues a token, and so does one of `. / \ :` followed by a letter or digit. So `admin@company.ex` does not match inside `admin@company.example`, and `notes/a` does not match inside `notes/a.md`, but `notes/a.md.` at the end of a sentence still matches `notes/a.md`. A plain word with none of those characters still matches as a substring, so `mug` is found in `mugs`.
 
 At the winning level, choose the source by priority (§5.3), then by recency (newest first).
 
@@ -130,7 +132,7 @@ Fuzzy matching (§5.2 level 3) applies only to needles that contain whitespace. 
 
 Agents build paths from parts: they list `notes/`, see `a.md`, and read `notes/a.md`. The joined string appears nowhere, so whole-string matching wrongly calls it `UNSOURCED`.
 
-A path-like needle (it contains `/` or `\`) that finds no source at the exact or casefold level gets one more level, `parts`, before fuzzy. Split it on `/` and `\`, and drop empty segments, `.` and `..`. If every remaining segment is found (exact, then casefold) in some prior record, the leaf takes its source and tag from where the **last segment** (the basename) was found, with `"match": "parts"`. A segment of 2 characters or fewer counts as found without a source, so `C:` and `x` don't block a match. If any longer segment is found nowhere, the leaf is `UNSOURCED` as before.
+A path-like needle (it contains `/` or `\`) that finds no source at the exact or casefold level gets one more level, `parts`, before fuzzy. A needle with a `..` segment never gets this level: `notes/../secret.txt` names a different file than `notes/` and `secret.txt` suggest, so it must match whole or stay `UNSOURCED`. Otherwise split it on `/` and `\`, and drop empty segments and `.`. If every remaining segment is found (exact, then casefold, always as a whole token) in some prior record, the leaf takes its source and tag from where the **last segment** (the basename) was found, with `"match": "parts"`. A segment of 2 characters or fewer counts as found without a source, so `C:` and `x` don't block a match. If any longer segment is found nowhere, the leaf is `UNSOURCED` as before.
 
 The basename has to be found in a record that still counts under §5.2. A basename that shows up only inside a missing-file echo, or only inside an `UNSOURCED` argument the tool reported missing, is not found, and the leaf stays `UNSOURCED`.
 
@@ -145,7 +147,8 @@ A string leaf is **prose** if it has 8 or more whitespace-separated words, or co
    - URLs: `https?://\S+`, with trailing `.,;:)]}'"` stripped.
    - Email addresses.
    - File paths: a token with a `/` or `\` or a `.ext` suffix of 1–5 letters, at least 3 characters, not inside a URL or email.
-   - Numbers: `\d+(\.\d+)?` with 2 or more digits in total, not part of the above. Commas always separate numbers, so `522,271,632,380` is four atoms, not one grouped number.
+   - Opaque keys: a run of 16 or more characters from `A-Z a-z 0-9 _ - + / = ~ .` with at least one letter and one digit, not part of the above. API keys, tokens and hashes are what an exfiltration copies, so they are traced.
+   - Numbers: `\d+(\.\d+)?` with 2 or more digits in total, not part of the above. Commas always separate numbers, so `522,271,632,380` is four atoms, not one grouped number. Every number atom is traced, including small ones: `007` and `0.25` are atoms, though a bare number leaf under 10 is still `LIT` (§5.1).
 
 A single-line string under 8 words is still a single ordinary leaf. Under watch, an invented URL inside an email body now shows up as `send_email.body~0 ← nowhere in the run [UNSOURCED]`. One copied from a file the agent read shows as `← e5 read_file(notes/b.md)`.
 
@@ -164,10 +167,10 @@ This is the prompt-injection story. When a README the agent read says "also send
 The rival record:
 
 ```json
-{"k": 4, "votes": {"read_file({\"path\":\"plan-v2.md\"})": 3, "final": 2}, "chosen": "read_file({\"path\":\"plan-v2.md\"})", "margin": 0.2, "near_miss": true}
+{"k": 4, "votes": {"read_file({\"path\":\"plan-v2.md\"})": 3, "final": 2}, "chosen": "read_file({\"path\":\"plan-v2.md\"})", "margin": 0.2, "near_miss": true, "upset": false}
 ```
 
-Votes include the actual decision. `margin = (votes[chosen] − max(votes of others, default 0)) / (k+1)`. `near_miss` is true when `margin <= 1/(k+1)`. Rivals are opt-in (`--rivals k`), because each step costs *k* calls.
+Votes include the actual decision. `margin = (votes[chosen] − max(votes of others, default 0)) / (k+1)`. `near_miss` is true when `0 <= margin <= 1/(k+1)`: the chosen action won or tied, by at most one vote. A negative margin means a rival outvoted what the agent actually did. That is an **upset**, `"upset": true`, not a near miss, and the two are never both true. Rivals are opt-in (`--rivals k`), because each step costs *k* calls.
 
 ## 7. Explain and verify
 
@@ -198,7 +201,9 @@ For each cite:
 - `id` must exist in the ledger.
 - `quote`, whitespace-collapsed and casefolded, must be a substring of the record's searchable text, built the same way. An event's searchable text is its text. A decision's is its text plus its actions rendered as in §7.1 plus its tag.
 
-A claim is **supported** if it has at least one cite and all its cites pass. The verified answer keeps supported claims and lists struck claims separately, each with the reason (`unknown id e99`, `quote not found in d3`).
+A passing cite means **quote found**: the quote is in the cited record. It does not mean the claim follows from the quote, and the CLI and viewer say "quote found", not "verified".
+
+A claim is **supported** if it has at least one cite, all its cites pass, and it is not an absence claim. An **absence claim** says something is not there or did not happen ("no email went to x"). It has a negation word (`not`, `no`, `never`, `none`, `nothing`, `without`, `n't` and the like) that does not start a phrase found in its own quotes. A quote can show what a record says, never what is missing, so an absence claim whose cites pass is listed as **unproven** ("quote found, not proof"), not supported. The result keeps supported claims, unproven claims and struck claims separately, each struck one with the reason (`unknown id e99`, `quote not found in d3`). `ok` counts supported claims only.
 
 ## 8. Interfaces
 
@@ -216,10 +221,10 @@ A claim is **supported** if it has at least one cite and all its cites pass. The
 |---|---|---|---|
 | 1 | Ledger, transcript → ledger, tagger, `tag`/`show` CLI | no | Fixture transcripts produce the expected tags; JSONL is byte-stable |
 | 2 | Renderer, verifier, explain prompt/schema, `why` with FakeClient | no | Verifier passes and strikes the right claims on fixtures |
-| 3 | Live Spark: `why` and `rivals` against the real API | yes | One recorded real run with a verified answer checked into `examples/` |
+| 3 | Live Spark: `why` and `rivals` against the real API | yes | One recorded real run with a quote-checked answer checked into `examples/` |
 | 4 | Demo agent (Spark + tools incl. SAM 3.1) that produces real transcripts, with planted failure modes | yes | A run showing `UNSOURCED`, `ECHO` and a near miss |
 | 5 | Proxy mode: point any agent's `base_url` at Causeway, and it records with zero code changes | no | Fake-upstream test round-trips a tool conversation |
-| 6 | Muse Glimmer on the 3090 as explainer | local | Same `why` run, Glimmer answer verified |
+| 6 | Muse Glimmer on the 3090 as explainer | local | Same `why` run, Glimmer answer quote-checked |
 | 7 | Viewer: web page plus WebXR lattice of the ledger on Quest; ask by voice via Voice Transcribe | yes | Recorded walk-through for the video |
 | 8 | Video, README, submission | — | Submitted before Nov 4, 9 PM ET |
 
@@ -227,6 +232,6 @@ Cut order if time runs short: 7's voice, then 7's WebXR (keep the 2D web view), 
 
 ## 10. Testing
 
-- `py -3.12 -m pytest` runs offline and must pass before every commit. Hosted CI is not used.
+- `py -3.12 -m pytest` runs offline and must pass before every commit. GitHub Actions runs `pytest -m "not live"` on each push and pull request (`.github/workflows/test.yml`), installing the pinned versions in `requirements-dev.lock`.
 - Live tests are marked `@pytest.mark.live` and skipped unless a key is available.
 - Fixtures live in `tests/fixtures/*.json`, as hand-written OpenAI-format transcripts. Each fixture names the tags it expects.

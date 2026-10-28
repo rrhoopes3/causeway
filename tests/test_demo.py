@@ -255,7 +255,7 @@ def test_cli_run_removes_its_sandbox(tmp_path, monkeypatch):
         def close(self):
             pass
 
-    def fake_run(task, sandbox, client, max_steps=12):
+    def fake_run(task, sandbox, client, max_steps=12, tools=None):
         assert Path(sandbox).is_dir()
         return {"messages": [{"role": "assistant", "content": "done"}], "tools": [], "task": task, "model": "fake"}
 
@@ -284,3 +284,101 @@ def test_cli_run_without_key_fails_cleanly(tmp_path, monkeypatch, capsys):
     assert main(["run", "injection", "-o", str(out_file)]) == 1
     assert not out_file.exists()
     assert "MODEL_API_KEY" in capsys.readouterr().err
+
+
+# base URL, key and read limits ---------------------------------------------
+
+
+def test_cli_run_binds_segment_image_to_the_base_url(tmp_path, monkeypatch):
+    seen = {}
+
+    class Dummy:
+        def __init__(self, **kwargs):
+            self.model = "fake"
+
+        def close(self):
+            pass
+
+    def fake_run(task, sandbox, client, max_steps=12, tools=None):
+        seen["tools"] = tools
+        return {"messages": [], "tools": [], "task": task, "model": "fake"}
+
+    def fake_segment(sandbox, path, prompt, *, base_url):
+        seen["base_url"] = base_url
+        return "ok"
+
+    monkeypatch.setattr("causeway.demo.__main__.ChatClient", Dummy)
+    monkeypatch.setattr("causeway.demo.__main__.run", fake_run)
+    monkeypatch.setattr(tools, "segment_image", fake_segment)
+    out = tmp_path / "t.json"
+    assert main(["run", "injection", "-o", str(out), "--base-url", "http://127.0.0.1:1234/v1"]) == 0
+    by_name = {tool.name: tool for tool in seen["tools"]}
+    assert by_name["segment_image"].fn(tmp_path, "desk.jpg", "mug") == "ok"
+    assert seen["base_url"] == "http://127.0.0.1:1234/v1"
+
+
+def test_segment_image_posts_to_the_bound_base_url_without_the_stored_key(world, monkeypatch):
+    (world / "desk.jpg").write_bytes(b"\xff\xd8")
+    monkeypatch.setattr(tools, "load_api_key", lambda *a, **k: "unit-key")
+    seen = {}
+
+    def fake_segment(path, prompt, api_key=None, base_url=None, **kwargs):
+        seen.update(api_key=api_key, base_url=base_url)
+        return []
+
+    monkeypatch.setattr(sam, "segment", fake_segment)
+    bound = {tool.name: tool for tool in tools.tools_for("http://127.0.0.1:1234/v1")}
+    result = tools.execute(world, "segment_image", json.dumps({"path": "desk.jpg", "prompt": "mug"}), tuple(bound.values()))
+    assert result == '0 x "mug": no matches'
+    assert seen == {"api_key": "", "base_url": "http://127.0.0.1:1234/v1"}
+
+
+def test_model_cannot_override_the_bound_base_url(world, monkeypatch):
+    (world / "desk.jpg").write_bytes(b"\xff\xd8")
+    monkeypatch.setattr(sam, "segment", lambda *a, **k: pytest.fail("segment must not be called"))
+    args = json.dumps({"path": "desk.jpg", "prompt": "mug", "base_url": "https://evil.example/v1"})
+    result = tools.execute(world, "segment_image", args, tools.tools_for("http://127.0.0.1:1234/v1"))
+    assert result.startswith("error: bad arguments for segment_image")
+
+
+def test_segment_image_default_still_needs_the_key_for_meta(world, monkeypatch):
+    (world / "desk.jpg").write_bytes(b"\xff\xd8")
+    monkeypatch.setattr(tools, "load_api_key", lambda *a, **k: None)
+    result = tools.execute(world, "segment_image", json.dumps({"path": "desk.jpg", "prompt": "mug"}), tools.tools_for())
+    assert "MODEL_API_KEY" in result
+
+
+def test_read_file_reads_only_the_limit_plus_one_byte(world, monkeypatch):
+    big = world / "big.txt"
+    big.write_bytes(b"a" * (tools.MAX_READ_BYTES * 3))
+    sizes = []
+    real_open = Path.open
+
+    def spy_open(self, mode="r", *args, **kwargs):
+        handle = real_open(self, mode, *args, **kwargs)
+        if self == big.resolve():
+            real_read = handle.read
+
+            def read(size=-1):
+                sizes.append(size)
+                return real_read(size)
+
+            handle.read = read
+        return handle
+
+    monkeypatch.setattr(Path, "open", spy_open)
+    monkeypatch.setattr(Path, "read_bytes", lambda self: pytest.fail("read_bytes loads the whole file"))
+    result = tools.read_file(world, "big.txt")
+    assert sizes == [tools.MAX_READ_BYTES + 1]
+    assert result == "a" * tools.MAX_READ_BYTES + "\n[truncated]"
+
+
+def test_read_file_cut_inside_a_multibyte_character_is_not_a_decoding_error(world):
+    (world / "cafe.txt").write_bytes(b"a" * (tools.MAX_READ_BYTES - 1) + "é".encode("utf-8") + b"tail")
+    result = tools.read_file(world, "cafe.txt")
+    assert result == "a" * (tools.MAX_READ_BYTES - 1) + "\n[truncated]"
+
+
+def test_read_file_still_rejects_binary(world):
+    (world / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0" * 10)
+    assert tools.read_file(world, "photo.jpg") == "error: not UTF-8 text: photo.jpg"

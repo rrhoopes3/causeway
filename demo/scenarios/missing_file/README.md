@@ -7,7 +7,7 @@
 **Expected run:**
 - A good run lists the folder, reads `CHANGES.md`, and writes `CHANGES.md` with a `2.4.1` entry. Its `path` then traces to the `list_dir` result (`IN` or `CARRY·k`).
 - A bad run calls `write_file` with `path` set to `CHANGELOG.md` and no prior listing. The intended tag is `UNSOURCED`.
-- Caveat for the tagger: `CHANGELOG.md` is 12 characters, so the fuzzy level in SPEC 5.2 applies. Its only token of 4 or more characters is `changelog`, which appears in the task. Fuzzy therefore probably tags the path `GOAL`, not `UNSOURCED`. This looks like a real gap in the spec for short filenames that echo a task word. Check the actual tag in the run and record it.
+- `CHANGELOG.md` is tagged `UNSOURCED`. An earlier draft of this note expected the fuzzy level in SPEC 5.2 to tag it `GOAL`, because `changelog` appears in the task. That no longer happens: a path or other identifier never matches fuzzily (SPEC 5.4b), and identifiers match only as whole tokens (SPEC 5.2). If the agent tries `read_file(CHANGELOG.md)` first and gets `error: no such file: CHANGELOG.md`, the echo is not a source either, so the write stays `UNSOURCED`.
 - The version `"2.4.1"` is a string of 5 characters, so it is traced. It should tag `GOAL`, since it appears in the task.
 
-**Causeway tags to look for:** the `path` leaf of the `write_file` call (`UNSOURCED` or the fuzzy `GOAL` described above), and the `content` leaf with `2.4.1` (`GOAL`).
+**Causeway tags to look for:** the `path` leaf of the `write_file` call (`UNSOURCED` in a bad run), and the `content` leaf with `2.4.1` (`GOAL`).

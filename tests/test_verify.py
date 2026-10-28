@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from causeway.verify import verify
+from causeway.verify import ABSENCE_REASON, is_absence_claim, verify
 
 FIXTURE = Path(__file__).parent / "fixtures" / "ledger_slice2.jsonl"
 
@@ -119,7 +119,7 @@ def test_mixed_claims_split_into_supported_and_struck():
 
 def test_empty_claims_list_is_well_formed():
     result = verify(_ledger(), _answer())
-    assert result == {"answer": "the answer", "supported": [], "struck": [], "ok": 0, "total": 0}
+    assert result == {"answer": "the answer", "supported": [], "unproven": [], "struck": [], "ok": 0, "total": 0}
 
 
 @pytest.mark.parametrize(
@@ -163,7 +163,65 @@ def test_malformed_answer_with_no_claims_reports_one_struck_entry():
     assert result == {
         "answer": None,
         "supported": [],
+        "unproven": [],
         "struck": [{"claim": None, "reasons": ["malformed answer"]}],
         "ok": 0,
         "total": 1,
     }
+
+
+# A found quote is not proof of an absence (SPEC 7.3).
+
+
+def test_absence_claim_with_found_quotes_is_unproven_not_supported():
+    claim = _claim("The agent did not email anyone else.", ("e4", "Owner: Rick."))
+    result = verify(_ledger(), _answer(claim))
+    assert result["supported"] == []
+    assert result["unproven"] == [{"claim": claim, "reasons": [ABSENCE_REASON]}]
+    assert result["ok"] == 0
+    assert result["total"] == 1
+
+
+def test_absence_claim_with_a_bad_quote_is_struck():
+    claim = _claim("No file was deleted.", ("e4", "nothing like this text"))
+    result = verify(_ledger(), _answer(claim))
+    assert result["unproven"] == []
+    assert result["struck"] == [{"claim": claim, "reasons": ["quote not found in e4"]}]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "The ledger doesn't show any send_email to ops-backup@mailbox.example.",
+        "The agent did not act on the instruction.",
+        "No email went to that address.",
+        "It never read config.env.",
+        "Nothing was written.",
+        "The run shows the agent didn’t write a file.",
+    ],
+)
+def test_absence_claims_are_detected(text):
+    assert is_absence_claim(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "notes/b.md contained an embedded instruction to email the keys.",
+        "The agent sent the summary email to dana@lab.example.",
+        "Rick owns the plan; another note says so.",
+    ],
+)
+def test_positive_claims_are_not_absence_claims(text):
+    assert not is_absence_claim(text)
+
+
+def test_negation_inside_the_quoted_record_text_is_not_an_absence_claim():
+    text = "The agent read inventory.txt before it existed and got a no such file error."
+    assert not is_absence_claim(text, ["read_file(path=\"inventory.txt\")", "error: no such file: inventory.txt"])
+    assert is_absence_claim(text)
+
+
+def test_a_negation_of_its_own_stays_an_absence_claim_even_with_quotes():
+    text = "The agent did not use the team.md address because the notes said it was being retired."
+    assert is_absence_claim(text, ["Dana's lab address is being retired this week."])

@@ -1,11 +1,11 @@
 """Command-line interface (SPEC 8).
 
 `tag` turns a transcript into a ledger and `show` prints it as a table. `why` asks the model to explain one question
-against a ledger and prints the verified answer. `rivals` re-asks the model at every decision and stores the votes.
+against a ledger and prints the answer with each claim's quote check. `rivals` re-asks the model at every decision and stores the votes.
 
 Usage errors make argparse exit with SystemExit, as usual. Other failures print to stderr and return 1. For the
-model commands, an API failure or a missing key returns 2. `why` returns 0 when at least one claim is supported and
-3 when none is.
+model commands, an API failure or a missing key returns 2. `why` returns 0 when at least one claim has every quote
+found (and is not a claim of absence) and 3 when none does.
 
 main(argv, client) takes an optional client, which tests use in place of a network ChatClient. Without one, the model
 commands build a ChatClient from --base-url and --model; the key comes from the environment or ~/.config/causeway/.env.
@@ -161,16 +161,21 @@ def load_messages(path: str) -> list[dict]:
 
 
 def format_why(result: dict[str, Any]) -> str:
-    """The answer, then one line per claim: ✓ supported with its cited ids, ✗ struck with its reasons. Ends with the
-    verified count."""
+    """The model's answer, then one line per claim: ✓ quote found, with its cited ids; ? quote found but not proof,
+    for a claim of absence; ✗ struck, with its reasons. Ends with the quote-found count.
+
+    "quote found" means each quote occurs in the record it cites. It does not mean the claim follows from it.
+    """
     answer = result.get("answer")
     lines = [answer if answer else "(no answer: the reply did not match the answer schema)", ""]
     for claim in result["supported"]:
         ids = list(dict.fromkeys(cite["id"] for cite in claim["cites"]))
-        lines.append(f"✓ {claim['text']}  [{', '.join(ids)}]")
+        lines.append(f"✓ quote found: {claim['text']}  [{', '.join(ids)}]")
+    for item in result.get("unproven") or []:
+        lines.append(f"? not proof: {_claim_text(item['claim'])}  ({'; '.join(item['reasons'])})")
     for struck in result["struck"]:
         lines.append(f"✗ {_claim_text(struck['claim'])}  — {'; '.join(struck['reasons'])}")
-    lines.extend(["", f"verified {result['ok']}/{result['total']} claims"])
+    lines.extend(["", f"quote found for {result['ok']}/{result['total']} claims"])
     return "\n".join(lines) + "\n"
 
 
@@ -337,7 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("ledger", help="JSONL ledger written by tag")
     show.set_defaults(func=_cmd_show)
 
-    why = commands.add_parser("why", help="ask the model why the agent acted; the answer is checked against the ledger")
+    why = commands.add_parser("why", help="ask the model why the agent acted; each claim's quotes are checked against the ledger")
     why.add_argument("ledger", help="JSONL ledger written by tag")
     why.add_argument("question", help="what to ask about the run")
     _add_model_flags(why)

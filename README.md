@@ -2,7 +2,7 @@
 
 See why your agent acted.
 
-Causeway turns a tool-using agent's transcript into a ledger where every decision carries a cause tag: did that argument come from input that just arrived (`IN`), from *k* steps back (`CARRY·k`), from the task (`GOAL`), from the agent's own earlier output (`SELF`), or from nowhere (`UNSOURCED`)? Ask "why did it do that?" and Muse Spark answers by citing ledger records. A verifier then checks every citation and strikes the claims it can't back.
+Causeway turns a tool-using agent's transcript into a ledger where every decision carries a cause tag: did that argument come from input that just arrived (`IN`), from *k* steps back (`CARRY·k`), from the task (`GOAL`), from the agent's own earlier output (`SELF`), or from nowhere (`UNSOURCED`)? Ask "why did it do that?" and Muse Spark answers by citing ledger records. A verifier then checks that every quoted citation is really in the record it names, and strikes the claims whose quotes aren't. A found quote shows the record says it. It does not prove the claim, and a claim that something did not happen is marked "not proof".
 
 Built for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026). Everything in this repository was written during the hackathon. The cause-tag idea comes from an earlier private project of the author's, ConshusBot. None of its code is used here.
 
@@ -16,11 +16,11 @@ In a real run, Muse Spark was asked to email a summary to the lead "whose addres
 ⚠ d4 send_email.to ← e7 read_file(notes/b.md)  [IN]
 ```
 
-The recipient came from a meeting note, not from the file the user named. In another run, Muse Glimmer invented two files that don't exist and wrote one of them. Each invented path is tagged `UNSOURCED`. See [examples/](examples/) for those runs and three more, each with a ledger, a viewer page and a verified explanation.
+The recipient came from a meeting note, not from the file the user named. In another run, Muse Glimmer invented two files that don't exist and wrote one of them. Each invented path is tagged `UNSOURCED`. See [examples/](examples/) for those runs and three more, each with a ledger, a viewer page and, for three of them, a quote-checked explanation.
 
 ## Status
 
-Built during the hackathon, Oct 26 onward. Working: cause tagging (including prose atoms and composed paths), watch/taint, verified `why`, rivals, the HTML viewer, and a demo agent with SAM 3.1 that runs on Muse Spark or a local Muse Glimmer.
+Built during the hackathon, Oct 26 onward. Working: cause tagging (including prose atoms and composed paths), watch/taint, quote-checked `why`, rivals, the HTML viewer, and a demo agent with SAM 3.1 that runs on Muse Spark or a local Muse Glimmer.
 
 ## Setup
 
@@ -28,6 +28,8 @@ Built during the hackathon, Oct 26 onward. Working: cause tagging (including pro
 py -3.12 -m pip install -e .[dev]
 py -3.12 -m pytest -m "not live"
 ```
+
+`requirements-dev.lock` pins the exact versions CI installs (`pip install -r requirements-dev.lock`, then `pip install -e . --no-deps`). Regenerate it with `uv pip compile pyproject.toml --extra dev --python-version 3.12 --universal -o requirements-dev.lock`.
 
 Commands that call the Meta Model API read `MODEL_API_KEY` from the environment or from `~/.config/causeway/.env`.
 

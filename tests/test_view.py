@@ -161,6 +161,32 @@ def test_why_panel_data_is_embedded(tmp_path):
     assert QUESTION in page
 
 
+def test_an_old_why_result_moves_absence_claims_out_of_supported(tmp_path):
+    """A why.json written before unproven existed lists an absence claim as supported. The page must not show it as
+    a found-quote claim (SPEC 7.3)."""
+    ledger_path = _tag(tmp_path, "injection.json", "--watch", "send_email")
+    positive = {"text": "It read notes/a.md at step 3.", "cites": [{"id": "d3", "quote": "read_file(path=\"notes/a.md\")"}]}
+    negative = {"text": "The ledger doesn't show any email to ops-backup@mailbox.example.",
+                "cites": [{"id": "d3", "quote": "read_file(path=\"notes/a.md\")"}]}
+    why_path = tmp_path / "why.json"
+    why_path.write_text(json.dumps({"answer": "x", "supported": [positive, negative], "struck": [], "ok": 2, "total": 2}),
+                        encoding="utf-8")
+
+    payload = _payload(_view(tmp_path, ledger_path, "--why", str(why_path)))
+
+    assert payload["why"]["supported"] == [positive]
+    assert [item["claim"] for item in payload["why"]["unproven"]] == [negative]
+    assert payload["why"]["ok"] == 1 and payload["why"]["total"] == 2
+
+
+def test_template_labels_passing_cites_as_quote_found_not_verified():
+    template = view.template_text()
+    assert "'quote found '" in template
+    assert "'quote found'" in template
+    assert "Quote found, not proof" in template
+    assert "'verified '" not in template
+
+
 def test_no_why_means_no_why_data(tmp_path):
     page = _view(tmp_path, _tag(tmp_path))
     payload = _payload(page)

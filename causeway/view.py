@@ -15,7 +15,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from causeway import cli, ledger, render, tagger
+from causeway import cli, ledger, render, tagger, verify
 
 TEMPLATE_NAME = "viewer_template.html"
 _PLACEHOLDER = re.compile(r"__(TITLE|LEDGER_JSON)__")
@@ -70,12 +70,22 @@ def load_why(path: str | Path) -> dict[str, Any]:
     if not isinstance(data, dict) or not isinstance(data.get("supported"), list) or not isinstance(data.get("struck"), list):
         raise ValueError(f"{path}: not a why result (expected the JSON from `causeway why --json`)")
     answer = data.get("answer")
+    supported, unproven = [], list(data.get("unproven") or [])
+    for claim in data["supported"]:
+        # A result written before absence claims were split out still lists them as supported (SPEC 7.3).
+        if isinstance(claim, dict) and isinstance(claim.get("text"), str) and verify.is_absence_claim(
+            claim["text"], verify.quotes_of(claim)
+        ):
+            unproven.append({"claim": claim, "reasons": [verify.ABSENCE_REASON]})
+        else:
+            supported.append(claim)
     return {
         "answer": answer if isinstance(answer, str) else None,
-        "supported": data["supported"],
+        "supported": supported,
+        "unproven": unproven,
         "struck": data["struck"],
-        "ok": data.get("ok", len(data["supported"])),
-        "total": data.get("total", len(data["supported"]) + len(data["struck"])),
+        "ok": len(supported),
+        "total": data.get("total", len(supported) + len(unproven) + len(data["struck"])),
     }
 
 
