@@ -177,3 +177,20 @@ def test_segment_non_2xx_raises_apierror_without_key():
     assert KEY not in str(info.value)
     assert KEY not in info.value.body
     assert "[redacted]" in info.value.body
+
+
+def test_segment_refuses_to_send_a_key_over_http(tmp_path):
+    image = tmp_path / "a.jpg"
+    image.write_bytes(b"\xff\xd8")
+    with pytest.raises(ValueError, match="https"):
+        sam.segment(str(image), "mug", api_key=KEY, base_url="http://api.meta.ai/v1", transport=_capture([]))
+
+
+def test_segment_sends_no_stored_key_to_a_local_server(tmp_path, monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY", KEY)
+    image = tmp_path / "a.jpg"
+    image.write_bytes(b"\xff\xd8")
+    captured = []
+    sam.segment(str(image), "mug", base_url="http://127.0.0.1:1234/v1", transport=_capture(captured))
+    assert str(captured[0].url) == "http://127.0.0.1:1234/v1/responses"
+    assert "authorization" not in captured[0].headers

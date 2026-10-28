@@ -10,6 +10,7 @@ from pathlib import Path
 
 from causeway.client import DEFAULT_BASE_URL, DEFAULT_MODEL, ChatClient
 from causeway.demo.agent import dumps, run
+from causeway.demo.tools import tools_for
 
 
 def _scenario_tree(path: Path) -> bool:
@@ -77,7 +78,7 @@ def _run(args: argparse.Namespace) -> int:
     try:
         sandbox = workdir / "sandbox"
         shutil.copytree(source, sandbox)
-        transcript = run(task, sandbox, client, max_steps=args.max_steps)
+        transcript = run(task, sandbox, client, max_steps=args.max_steps, tools=tools_for(args.base_url))
     finally:
         client.close()
         try:

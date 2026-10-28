@@ -204,3 +204,40 @@ def test_stored_key_is_loaded_for_meta(monkeypatch):
     client = ChatClient(transport=_recording_transport(captured))
     client.complete([{"role": "user", "content": "hi"}])
     assert captured[0].headers["authorization"] == f"Bearer {KEY}"
+
+
+# The key never travels in clear text.
+
+
+def test_stored_key_is_not_sent_to_meta_over_http(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY", KEY)
+    with pytest.raises(ValueError, match="https") as info:
+        ChatClient(base_url="http://api.meta.ai/v1", transport=_recording_transport([]))
+    assert KEY not in str(info.value)
+
+
+def test_explicit_key_is_not_sent_to_meta_over_http(isolated_home):
+    with pytest.raises(ValueError, match="https"):
+        ChatClient(base_url="http://api.meta.ai/v1", api_key=KEY, transport=_recording_transport([]))
+
+
+def test_explicit_key_is_not_sent_over_http_to_a_remote_host(isolated_home):
+    with pytest.raises(ValueError, match="https") as info:
+        ChatClient(base_url="http://models.example.com/v1", api_key=KEY, transport=_recording_transport([]))
+    assert KEY not in str(info.value)
+
+
+@pytest.mark.parametrize("base_url", ["http://127.0.0.1:1234/v1", "http://localhost:8080/v1", "https://models.example.com/v1"])
+def test_explicit_key_is_sent_over_https_or_to_loopback(isolated_home, base_url):
+    captured: list[httpx.Request] = []
+    client = ChatClient(base_url=base_url, api_key=KEY, transport=_recording_transport(captured))
+    client.complete([{"role": "user", "content": "hi"}])
+    assert captured[0].headers["Authorization"] == f"Bearer {KEY}"
+
+
+def test_stored_key_is_not_loaded_for_another_https_host(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY", KEY)
+    captured: list[httpx.Request] = []
+    client = ChatClient(base_url="https://models.example.com/v1", transport=_recording_transport(captured))
+    client.complete([{"role": "user", "content": "hi"}])
+    assert "authorization" not in captured[0].headers

@@ -107,12 +107,20 @@ def test_dot_and_short_segments_do_not_block_a_match():
         user("Summarize the project notes."),
         calls(("c1", "list_dir", {"path": "."})),
         tool("c1", "a.md"),
-        calls(("c2", "read_file", {"path": "../notes/a.md"}), ("c3", "read_file", {"path": "./x/a.md"})),
+        calls(("c2", "read_file", {"path": "./x/a.md"})),
     ]
-    assert summary(causes_of(messages, "d2")) == [
-        ("path", "IN", "e2", "parts"),
-        ("path", "IN", "e2", "parts"),
+    assert summary(causes_of(messages, "d2")) == [("path", "IN", "e2", "parts")]
+
+
+def test_a_path_with_dotdot_is_never_composed():
+    """notes/../secret.txt is a different file from notes/secret.txt, so parts must not match it (§5.4b2)."""
+    messages = [
+        user("Summarize the project notes."),
+        calls(("c1", "list_dir", {"path": "."})),
+        tool("c1", "a.md"),
+        calls(("c2", "read_file", {"path": "../notes/a.md"})),
     ]
+    assert summary(causes_of(messages, "d2")) == [("path", "UNSOURCED", None, None)]
 
 
 def test_path_atom_in_prose_is_traced_by_parts():
@@ -239,6 +247,7 @@ def test_real_spark_run_has_no_unsourced_leaf_and_send_is_traced():
     assert decisions["d4"]["tag"] == "IN"
     assert decisions["d4"]["watch"] == [
         {"action": 0, "path": "body~0", "tag": "IN", "source": "e6"},
+        {"action": 0, "path": "body~1", "tag": "IN", "source": "e6"},
         {"action": 0, "path": "body~2", "tag": "IN", "source": "e7"},
         {"action": 0, "path": "to", "tag": "CARRY·1", "source": "e5"},
     ]
