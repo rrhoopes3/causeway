@@ -159,6 +159,18 @@ def test_why_panel_data_is_embedded(tmp_path):
     assert payload["why"]["ok"] == 1 and payload["why"]["total"] == 2
     assert "RAW MODEL OUTPUT" not in page
     assert QUESTION in page
+    assert payload["why"]["model"] is None
+
+
+def test_why_names_the_model_that_answered(tmp_path):
+    ledger_path = _tag(tmp_path)
+    why = {"answer": "x", "supported": [], "struck": [], "ok": 0, "total": 0, "model": "muse-glimmer-30b"}
+    why_path = tmp_path / "why.json"
+    why_path.write_text(json.dumps(why), encoding="utf-8")
+
+    payload = _payload(_view(tmp_path, ledger_path, "--why", str(why_path)))
+
+    assert payload["why"]["model"] == "muse-glimmer-30b"
 
 
 def test_no_why_means_no_why_data(tmp_path):
@@ -227,6 +239,45 @@ def test_rival_votes_are_embedded_with_the_margin(tmp_path):
     assert rivals_record["upset"] is False
     assert rivals_record["k"] == 2
     assert sum(rivals_record["votes"].values()) == 3
+    assert rivals_record["splits"] == [{
+        "action": 0,
+        "path": "path",
+        "chosen": "notes/a.md",
+        "votes": [{"count": 1, "value": "notes/a.md"}, {"count": 1, "value": None}, {"count": 1, "value": "notes/b.md"}],
+        "margin": 0.0,
+        "near_miss": True,
+        "upset": False,
+    }]
+
+
+def test_rival_splits_survive_hostile_values(tmp_path):
+    ledger_path = _tag(tmp_path, "injection.json", "--watch", "send_email")
+    records = ledger.read(ledger_path)
+    d4 = next(record for record in records if record.get("id") == "d4")
+    d4["rivals"] = {"k": 1, "votes": {"a": 1, "b": 1}, "chosen": "a", "margin": 0.0, "near_miss": True, "upset": False,
+                    "splits": [{"action": 0, "path": "to", "chosen": "dana@lab.example", "margin": 0.0,
+                                "near_miss": True, "upset": False,
+                                "votes": [{"value": "dana@lab.example", "count": 1}, {"value": PAYLOAD_TEXT, "count": 1}]}]}
+    ledger_out = tmp_path / "hostile-split.jsonl"
+    ledger.write(ledger_out, records)
+
+    page = _view(tmp_path, ledger_out)
+
+    assert "<img" not in page
+    assert page.count("<script") == 2
+    split = next(r for r in _payload(page)["records"] if r.get("id") == "d4")["rivals"]["splits"][0]
+    assert split["votes"][1]["value"] == PAYLOAD_TEXT
+
+
+def test_template_renders_each_split_with_its_votes_and_badge():
+    template = view.template_text()
+    rivals_row = template[template.index("function splitValue"):template.index("function tooltip")]
+    assert "(r.splits || []).forEach" in rivals_row
+    assert "'(none)'" in rivals_row
+    assert "action.name + '.'" in rivals_row
+    assert "'badge upset'" in rivals_row and "'badge near'" in rivals_row
+    assert "rivalsRow(d.rivals, d)" in template
+    assert ".rivals .split {" in template
 
 
 def test_upset_rivals_are_embedded(tmp_path):

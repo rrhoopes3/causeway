@@ -186,6 +186,11 @@ pre.actions { color: #f3e5c8; }
 .track { position: relative; flex: 0 0 170px; height: 7px; border-radius: 99px; background: rgba(255, 255, 255, 0.07); }
 .track .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 99px; background: linear-gradient(90deg, rgba(212, 162, 76, 0.5), var(--gold)); }
 .track .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 2px; background: #e8ebf0; }
+.rivals .split { flex: 0 0 100%; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; overflow-wrap: anywhere; }
+.rivals .split .where { color: var(--ink); }
+.rivals .split .sep, .rivals .split .n { color: var(--faint); }
+.rivals .split .n { margin-left: 5px; }
+.rivals .split .vote.chosen .val { color: var(--gold); }
 
 /* taints and explain */
 .taint-line {
@@ -554,7 +559,7 @@ pre.actions { color: #f3e5c8; }
 
     var head = el('div', 'panel-head');
     head.appendChild(el('h2', null, 'Explain'));
-    if (why) head.appendChild(el('span', 'count', 'verified ' + why.ok + '/' + why.total));
+    if (why) head.appendChild(el('span', 'count', 'verified ' + why.ok + '/' + why.total + (why.model ? ' · answered by ' + why.model : '')));
     panel.appendChild(head);
 
     if (question) panel.appendChild(el('p', 'question', question));
@@ -594,7 +599,37 @@ pre.actions { color: #f3e5c8; }
 
   /* ---- records ---- */
 
-  function rivalsRow(r) {
+  function splitValue(value) {
+    if (value === null || value === undefined) return '(none)';
+    return typeof value === 'string' ? value : JSON.stringify(value);
+  }
+
+  function splitLine(s, d) {
+    var action = (d.actions || [])[s.action];
+    var where = (action ? action.name + '.' : '') + s.path;
+    var chosen = JSON.stringify(s.chosen);
+    var line = el('div', 'split');
+    line.setAttribute('title', where + ': ' + (s.votes || []).map(function (v) {
+      return splitValue(v.value) + ' ' + v.count;
+    }).join(' · '));
+    line.appendChild(el('span', 'where', '~ ' + where + ':'));
+    (s.votes || []).forEach(function (v, i) {
+      if (i) line.appendChild(el('span', 'sep', '·'));
+      var vote = el('span', 'vote' + (JSON.stringify(v.value) === chosen ? ' chosen' : ''));
+      var text = splitValue(v.value);
+      vote.appendChild(el('span', 'val', text.length > 72 ? text.slice(0, 71) + '…' : text));
+      vote.appendChild(el('span', 'n', v.count));
+      line.appendChild(vote);
+    });
+    if (s.upset) {
+      line.appendChild(el('span', 'badge upset', 'upset'));
+    } else if (s.near_miss) {
+      line.appendChild(el('span', 'badge near', 'near miss'));
+    }
+    return line;
+  }
+
+  function rivalsRow(r, d) {
     var total = Math.max(1, (r.k || 0) + 1);
     var votes = r.votes || {};
     var chosen = r.chosen;
@@ -619,6 +654,7 @@ pre.actions { color: #f3e5c8; }
     } else if (r.near_miss) {
       row.appendChild(el('span', 'badge near', 'near miss'));
     }
+    (r.splits || []).forEach(function (s) { row.appendChild(splitLine(s, d)); });
     return row;
   }
 
@@ -741,7 +777,7 @@ pre.actions { color: #f3e5c8; }
     var chips = el('div', 'chips');
     (d.causes || []).forEach(function (c) { chips.appendChild(causeChip(d, c)); });
     if (chips.childNodes.length) card.appendChild(chips);
-    if (d.rivals) card.appendChild(rivalsRow(d.rivals));
+    if (d.rivals) card.appendChild(rivalsRow(d.rivals, d));
 
     card.addEventListener('click', function () { togglePin({ type: 'source', id: d.id }); });
     return card;

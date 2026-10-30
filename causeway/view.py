@@ -70,8 +70,10 @@ def load_why(path: str | Path) -> dict[str, Any]:
     if not isinstance(data, dict) or not isinstance(data.get("supported"), list) or not isinstance(data.get("struck"), list):
         raise ValueError(f"{path}: not a why result (expected the JSON from `causeway why --json`)")
     answer = data.get("answer")
+    model = data.get("model")
     return {
         "answer": answer if isinstance(answer, str) else None,
+        "model": model if isinstance(model, str) else None,
         "supported": data["supported"],
         "struck": data["struck"],
         "ok": data.get("ok", len(data["supported"])),

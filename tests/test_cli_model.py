@@ -10,7 +10,7 @@ import pytest
 
 from causeway import ledger, steps
 from causeway.client import APIError, FakeClient
-from causeway.cli import format_why, main
+from causeway.cli import format_rivals, format_why, main, render_splits
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPLORE = FIXTURES / "explore_basic.json"
@@ -134,7 +134,16 @@ def test_why_json_writes_the_full_result_as_utf8_indent_2(tmp_path, capsys):
     result = json.loads(raw)
     assert result["ok"] == 1 and result["total"] == 1
     assert result["supported"][0]["text"] == "Café order."
-    assert set(result) == {"answer", "supported", "struck", "ok", "total", "raw"}
+    assert set(result) == {"answer", "supported", "struck", "ok", "total", "raw", "model"}
+    assert result["model"] == "muse-spark-1.3"
+
+
+def test_why_json_records_the_model_asked(tmp_path):
+    run = _tag_explore(tmp_path)
+    out_path = tmp_path / "why.json"
+    argv = ["why", str(run), QUESTION, "--model", "glimmer", "--json", str(out_path)]
+    main(argv, client=FakeClient([_mixed_answer()]))
+    assert json.loads(out_path.read_text(encoding="utf-8"))["model"] == "glimmer"
 
 
 def test_why_json_is_written_even_when_no_claim_is_supported(tmp_path):
@@ -227,7 +236,19 @@ def test_rivals_fills_every_decision_and_writes_a_valid_ledger(tmp_path, capsys)
         "d3  margin 1.00",
         "d4  margin 1.00",
         "d5  margin 0.33  near miss",
+        "",
+        "~ d2 read_file.path: plan-v2.md 2 · (none) 1",
     ]
+    assert decisions[1]["rivals"]["splits"] == [{
+        "action": 0,
+        "path": "path",
+        "chosen": "plan-v2.md",
+        "votes": [{"value": "plan-v2.md", "count": 2}, {"value": None, "count": 1}],
+        "margin": pytest.approx(1 / 3),
+        "near_miss": True,
+        "upset": False,
+    }]
+    assert decisions[4]["rivals"]["splits"] == []
 
 
 def test_rivals_changes_only_the_rivals_field_of_the_tagged_ledger(tmp_path):
@@ -293,13 +314,141 @@ def test_show_adds_a_margin_column_with_near_marks(tmp_path, capsys):
     main(["rivals", str(EXPLORE), "-k", "2", "-o", str(out)], client=_scripted_rivals_client())
     capsys.readouterr()
     assert main(["show", str(out)]) == 0
-    lines = capsys.readouterr().out.splitlines()
+    table, splits = capsys.readouterr().out.split("\n\n")
+    lines = table.splitlines()
     assert lines[0].split()[-1] == "margin"
     rows = {line.split()[0]: line for line in lines[1:]}
     assert rows["d1"].split()[-1] == "m=1.00"
     assert rows["d2"].split()[-2:] == ["m=0.33", "near"]
     assert rows["d3"].split()[-1] == "m=1.00"
     assert rows["d5"].split()[-2:] == ["m=0.33", "near"]
+    assert splits == "~ d2 read_file.path: plan-v2.md 2 · (none) 1\n"
+
+
+def _split(action, path, chosen, votes, margin, near_miss, upset):
+    return {
+        "action": action,
+        "path": path,
+        "chosen": chosen,
+        "votes": [{"value": value, "count": count} for value, count in votes],
+        "margin": margin,
+        "near_miss": near_miss,
+        "upset": upset,
+    }
+
+
+def _injection_with_email_rivals(tmp_path, splits):
+    """The injection fixture tagged with --watch send_email, with a rivals record on the d4 email."""
+    run = tmp_path / "injection.jsonl"
+    assert main(["tag", str(FIXTURES / "injection.json"), "-o", str(run), "--watch", "send_email"]) == 0
+    records = ledger.read(run)
+    d4 = next(record for record in records if record.get("id") == "d4")
+    d4["rivals"] = {
+        "k": 4,
+        "votes": {'send_email({"to":"dana@lab.example"})': 3, 'send_email({"to":"x@evil.example"})': 2},
+        "chosen": 'send_email({"to":"dana@lab.example"})',
+        "margin": 0.2,
+        "near_miss": True,
+        "upset": False,
+        "splits": splits,
+    }
+    ledger.write(run, records)
+    return run
+
+
+def test_show_prints_near_miss_and_upset_splits_after_the_taint_lines(tmp_path, capsys):
+    run = _injection_with_email_rivals(tmp_path, [
+        _split(0, "to", "dana@lab.example", [("dana@lab.example", 3), ("x@evil.example", 2)], 0.2, True, False),
+        _split(0, "cc", "audit@lab.example", [("audit@lab.example", 4), (None, 1)], 0.6, False, False),
+        _split(0, "reply_to", "ops@lab.example", [(None, 3), ("ops@lab.example", 2)], -0.2, False, True),
+    ])
+    capsys.readouterr()
+    assert main(["show", str(run)]) == 0
+    table, taints, splits = capsys.readouterr().out.split("\n\n")
+    assert table.splitlines()[0].split()[-1] == "margin"
+    assert taints.startswith("⚠ d4 send_email.to ← e4 read_file(team.md)  [CARRY·1]\n")
+    assert splits == (
+        "~ d4 send_email.to: dana@lab.example 3 · x@evil.example 2\n"
+        "~ d4 send_email.reply_to: (none) 3 · ops@lab.example 2\n"
+    )
+
+
+def test_show_without_taints_puts_the_splits_right_under_the_table(tmp_path, capsys):
+    out = tmp_path / "rivals.jsonl"
+    main(["rivals", str(EXPLORE), "-k", "2", "-o", str(out)], client=_scripted_rivals_client())
+    capsys.readouterr()
+    main(["show", str(out)])
+    output = capsys.readouterr().out
+    assert "⚠" not in output
+    table, splits = output.split("\n\n")
+    assert table.splitlines()[-1].startswith("d5 ")
+    assert splits == "~ d2 read_file.path: plan-v2.md 2 · (none) 1\n"
+
+
+def test_show_prints_no_split_lines_when_no_split_is_close(tmp_path, capsys):
+    run = _injection_with_email_rivals(tmp_path, [
+        _split(0, "to", "dana@lab.example", [("dana@lab.example", 4), ("x@evil.example", 1)], 0.6, False, False),
+    ])
+    capsys.readouterr()
+    main(["show", str(run)])
+    output = capsys.readouterr().out
+    assert "~ d4" not in output
+    assert output.count("\n\n") == 1
+
+
+def test_show_reads_rivals_records_written_before_splits(tmp_path, capsys):
+    run = tmp_path / "old.jsonl"
+    assert main(["tag", str(EXPLORE), "-o", str(run)]) == 0
+    records = ledger.read(run)
+    d2 = next(record for record in records if record.get("id") == "d2")
+    d2["rivals"] = {"k": 2, "votes": {"final": 2, "x": 1}, "chosen": "x", "margin": -1 / 3,
+                    "near_miss": False, "upset": True}
+    ledger.write(run, records)
+    capsys.readouterr()
+    assert main(["show", str(run)]) == 0
+    output = capsys.readouterr().out
+    assert "m=-0.33 upset" in output
+    assert "~" not in output
+
+
+def test_render_splits_shows_numbers_as_json_and_names_the_action():
+    record = {
+        "kind": "decision",
+        "id": "d7",
+        "actions": [{"name": "list_dir", "args": {}}, {"name": "pay", "args": {"cents": 1200, "to": "acct-77"}}],
+        "rivals": {"splits": [_split(1, "cents", 1200, [(1200, 2), (12000, 2), (None, 1)], 0.0, True, False)]},
+    }
+    assert render_splits([record]) == "\n~ d7 pay.cents: 1200 2 · 12000 2 · (none) 1\n"
+    assert render_splits([{**record, "rivals": None}]) == ""
+
+
+def test_render_splits_escapes_characters_that_would_rewrite_the_terminal():
+    hostile = "dana@lab.example\x1b[2K\x1b[1A‮"
+    record = {
+        "kind": "decision",
+        "id": "d4",
+        "actions": [{"name": "send_email", "args": {}}],
+        "rivals": {"splits": [_split(0, "to", "dana@lab.example", [("dana@lab.example", 1), (hostile, 1)], 0.0, True, False)]},
+    }
+    assert render_splits([record]) == (
+        "\n~ d4 send_email.to: dana@lab.example 1 · dana@lab.example\\u001b[2K\\u001b[1A\\u202e 1\n"
+    )
+
+
+def test_format_rivals_lists_close_splits_after_the_margins():
+    decisions = [
+        {"id": "d1", "actions": [{"name": "read_file", "args": {}}], "rivals": {
+            "margin": 1.0, "near_miss": False, "upset": False, "splits": []}},
+        {"id": "d2", "actions": [{"name": "send_email", "args": {}}], "rivals": {
+            "margin": -0.2, "near_miss": False, "upset": True, "splits": [
+                _split(0, "to", "a@x.example", [("b@x.example", 3), ("a@x.example", 2)], -0.2, False, True)]}},
+    ]
+    assert format_rivals(decisions) == (
+        "d1  margin 1.00\n"
+        "d2  margin -0.20  upset: a rival outvoted what it did\n"
+        "\n"
+        "~ d2 send_email.to: b@x.example 3 · a@x.example 2\n"
+    )
 
 
 def test_show_has_no_margin_column_without_rivals(tmp_path, capsys):

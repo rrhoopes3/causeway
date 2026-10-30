@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<base href="/static/">
+<title>Causeway companion</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b0d11;
+  --ink: #e4e7ec;
+  --muted: #8d95a2;
+  --faint: #5a616c;
+  --glass: rgba(18, 20, 27, 0.78);
+  --edge: rgba(255, 255, 255, 0.1);
+  --gold: #d4a24c;
+  --approve: #7cc79a;
+  --deny: #ef5b5b;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font: 13px/1.45 var(--sans); }
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+.hud {
+  position: fixed; top: 14px; left: 16px; max-width: min(460px, calc(100vw - 32px));
+  pointer-events: none; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+.brand { font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); }
+.brand span { color: var(--faint); }
+.line { margin-top: 4px; font: 12px/1.5 var(--mono); color: var(--muted); display: flex; flex-wrap: wrap; gap: 0 8px; align-items: center; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 8px currentColor; color: var(--gold); }
+body[data-conn="live"] .dot { background: var(--approve); color: var(--approve); }
+body[data-conn="reconnecting"] .dot { background: var(--deny); color: var(--deny); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+.sep { color: var(--faint); }
+#meta { color: var(--faint); }
+.task { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+.xr {
+  position: fixed; top: 14px; right: 16px;
+}
+.dock {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; align-items: center;
+  max-width: calc(100vw - 32px); padding: 6px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--edge);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.dock .group { display: contents; }
+button {
+  font: 600 12.5px/1 var(--sans); color: var(--ink); cursor: pointer;
+  padding: 8px 14px; border-radius: 999px; border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.04); transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+button:disabled { opacity: 0.4; cursor: default; }
+#start { background: var(--gold); border-color: var(--gold); color: #15171c; }
+#start:disabled { background: transparent; color: var(--muted); border-color: var(--edge); }
+.approve { background: var(--approve); border-color: var(--approve); color: #15171c; }
+.deny { color: var(--deny); border-color: rgba(239, 91, 91, 0.6); }
+.ask { color: var(--gold); border-color: rgba(212, 162, 76, 0.45); }
+.ghost { color: var(--muted); }
+.xr { color: var(--gold); border-color: rgba(212, 162, 76, 0.55); background: var(--glass); }
+.hint { position: fixed; left: 16px; bottom: 22px; color: var(--faint); font-size: 11.5px; pointer-events: none; }
+@media (max-width: 900px) { .hint { display: none; } }
+
+#toast {
+  position: fixed; left: 50%; bottom: 72px; transform: translate(-50%, 8px);
+  padding: 8px 14px; border-radius: 10px; background: rgba(40, 18, 20, 0.92); border: 1px solid rgba(239, 91, 91, 0.45);
+  color: var(--ink); opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none; max-width: calc(100vw - 32px);
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body data-conn="connecting">
+<header class="hud">
+  <div class="brand">Causeway <span>companion</span></div>
+  <div class="line"><i class="dot" aria-hidden="true"></i><span id="conn">connecting</span><span class="sep">·</span><span id="run">idle</span><span id="meta"></span></div>
+  <p id="task" class="task"></p>
+</header>
+<button id="xr" class="xr" disabled>Enter XR</button>
+<nav class="dock" aria-label="Run controls">
+  <button id="start" disabled>Start</button>
+  <span id="gate-controls" class="group" hidden>
+    <button id="approve" class="approve">Approve</button>
+    <button id="deny" class="deny">Deny</button>
+  </span>
+  <span id="asks" class="group" hidden></span>
+  <button id="reset" class="ghost" disabled>Reset</button>
+</nav>
+<p class="hint">Drag to look · click a card to trace its threads · scroll to zoom</p>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="announce" class="sr-only" aria-live="polite"></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

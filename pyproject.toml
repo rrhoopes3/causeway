@@ -14,7 +14,7 @@ dependencies = ["httpx>=0.27"]
 dev = ["pytest>=8"]
 
 [tool.setuptools]
-packages = ["causeway", "causeway.demo", "causeway.demo.scenarios"]
+packages = ["causeway", "causeway.demo", "causeway.demo.scenarios", "causeway.companion"]
 
 [tool.setuptools.package-dir]
 "causeway.demo.scenarios" = "demo/scenarios"
@@ -22,6 +22,7 @@ packages = ["causeway", "causeway.demo", "causeway.demo.scenarios"]
 [tool.setuptools.package-data]
 causeway = ["*.html"]
 "causeway.demo.scenarios" = ["**/*", "*/*", "*/*/*", "*/*/*/*"]
+"causeway.companion" = ["static/*", "static/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

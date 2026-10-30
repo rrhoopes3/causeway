@@ -20,7 +20,7 @@ The recipient came from a meeting note, not from the file the user named. In ano
 
 ## Status
 
-Built during the hackathon, Oct 26 onward. Working: cause tagging (including prose atoms and composed paths), watch/taint, verified `why`, rivals, the HTML viewer, and a demo agent with SAM 3.1 that runs on Muse Spark or a local Muse Glimmer.
+Built during the hackathon, Oct 26 onward. Working: cause tagging (including prose atoms and composed paths), watch/taint, verified `why` (answered by Muse Spark or a local Muse Glimmer), rivals, the HTML viewer, and a demo agent with SAM 3.1 that runs on Muse Spark or a local Muse Glimmer.
 
 ## Setup
 

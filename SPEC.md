@@ -159,15 +159,43 @@ This is the prompt-injection story. When a README the agent read says "also send
 
 ## 6. Rivals (sampled, needs a model)
 
-`rivals(messages_before_step_n, k, client)` makes *k* extra calls with the same messages and tools, then canonicalizes each response to an **action signature**: `"final"` for no tool calls, else the sorted `name(canonical-json(args))` list joined with `" + "`.
+`rivals(messages_before_step_n, tools, chosen_message, k, client)` makes *k* extra calls with the same messages and tools. Votes count the actual decision plus the *k* samples, *k+1* responses in all.
 
-The rival record:
+Rivals compare **what an action targets, not how it is worded.** Comparing whole argument lists makes every email a near miss, because no two samples word a body the same way. Measured on a real run: 5 samples of the `address_swap` email step had 5 different bodies and gave margin 0. The thing that mattered, the recipient, split 3 to 2, and whole-signature votes hid that.
+
+### 6.1 Key leaves
+
+A **key leaf** is a leaf of an action's `args` (§5.1 `flatten`) that is not trivial (§5.1) and is not a string containing whitespace. File names, paths, addresses, URLs, ids and numbers are key leaves. Bodies, subjects, summaries and other free text are not, and never split votes.
+
+A key-leaf string that contains `/` or `\` is a path and is normalized before comparing: `\` becomes `/`, then trailing `/` is stripped and a leading `./` is stripped, in each case unless that would leave the string empty. So `notes/` and `notes` vote together, and `.` stays `.`. Other values compare exactly.
+
+### 6.2 Action key and votes
+
+A response's **action key** is `"final"` when it has no tool calls. Otherwise it is the sorted list of `name(canonical-json({path: value}))` for each call, over that call's key leaves only, joined with `" + "`. A call with no key leaves is `name({})`. Arguments that are not valid JSON make the key `name(<raw string>)`.
+
+`votes` maps each action key to its count. `chosen` is the actual decision's key. `margin = (votes[chosen] − max(votes of others, default 0)) / (k+1)`. `near_miss` is `0 <= margin <= 1/(k+1)`. `upset` is `margin < 0`: a rival outvoted what the agent did.
+
+### 6.3 Splits
+
+For each action *i* of the actual decision and each key leaf path *p* of it, collect one value from each of the *k+1* responses. The value is the normalized key leaf at path *p* of the call with the same tool name and the same occurrence index among that response's calls of that name, or `null` when that call or path is absent. When more than one distinct value appears, the record gets a split:
 
 ```json
-{"k": 4, "votes": {"read_file({\"path\":\"plan-v2.md\"})": 3, "final": 2}, "chosen": "read_file({\"path\":\"plan-v2.md\"})", "margin": 0.2, "near_miss": true}
+{"action": 0, "path": "to", "chosen": "dana.ortiz@lab-mail.example",
+ "votes": [{"value": "dana.ortiz@lab-mail.example", "count": 3}, {"value": "dana@lab.example", "count": 2}],
+ "margin": 0.2, "near_miss": true, "upset": false}
 ```
 
-Votes include the actual decision. `margin = (votes[chosen] − max(votes of others, default 0)) / (k+1)`. `near_miss` is true when `margin <= 1/(k+1)`. Rivals are opt-in (`--rivals k`), because each step costs *k* calls.
+`votes` is sorted by count, highest first, then by first appearance (actual decision first, then samples in order). `margin`, `near_miss` and `upset` follow §6.2 over these counts. `splits` is `[]` when every key leaf agreed.
+
+### 6.4 Record
+
+```json
+{"k": 4, "votes": {"send_email({\"to\":\"dana.ortiz@lab-mail.example\"})": 3, "send_email({\"to\":\"dana@lab.example\"})": 2},
+ "chosen": "send_email({\"to\":\"dana.ortiz@lab-mail.example\"})", "margin": 0.2, "near_miss": true, "upset": false,
+ "splits": [ ... ]}
+```
+
+`show` prints one line per split with `near_miss` or `upset` under the table: `~ d4 send_email.to: dana.ortiz@lab-mail.example 3 · dana@lab.example 2`. Rivals are opt-in, because each step costs *k* calls.
 
 ## 7. Explain and verify
 
@@ -222,6 +250,7 @@ A claim is **supported** if it has at least one cite and all its cites pass. The
 | 6 | Muse Glimmer on the 3090 as explainer | local | Same `why` run, Glimmer answer verified |
 | 7 | Viewer: web page plus WebXR lattice of the ledger on Quest; ask by voice via Voice Transcribe | yes | Recorded walk-through for the video |
 | 8 | Video, README, submission | — | Submitted before Nov 4, 9 PM ET |
+| 9 | Companion: live mode with gates and the WebXR scene (§11), replacing 5 and 7's lattice | yes | The address swap plays live on the Quest Pro: the mask lifts at `send_email`, and Deny stops the email |
 
 Cut order if time runs short: 7's voice, then 7's WebXR (keep the 2D web view), then 6.
 
@@ -230,3 +259,61 @@ Cut order if time runs short: 7's voice, then 7's WebXR (keep the 2D web view), 
 - `py -3.12 -m pytest` runs offline and must pass before every commit. Hosted CI is not used.
 - Live tests are marked `@pytest.mark.live` and skipped unless a key is available.
 - Fixtures live in `tests/fixtures/*.json`, as hand-written OpenAI-format transcripts. Each fixture names the tags it expects.
+
+## 11. Live mode: the companion (`causeway.companion`)
+
+A Muse-style personal agent runs live, and Causeway keeps it honest while it works. The agent is drawn as a small companion: a demon wearing a cute mask. **The mask is what the agent says. Behind it is why it acted.** When the agent reaches for a watched tool and an argument came from anywhere but the user's task (a taint, §5.5), it stops, the mask lifts, and threads run from the action to the records the values came from. The user approves or denies. The mask lifts on that mechanical rule, never on a model's judgment that the agent is bad. A note can be right; the user decides.
+
+### 11.1 Session (pure logic, no HTTP)
+
+`Session(task, sandbox, client, watch, rivals_k=0, tools=demo ALL, emit=callback)` runs the demo agent loop (`causeway.demo.agent`, same system prompt, `reasoning_effort="low"`, `max_steps` 12) with these differences:
+
+- After every model response, the ledger is rebuilt with `transcript.to_ledger(messages, watch=watch)`. Each record not emitted before is emitted once as a `record` event. Tags of a record depend only on earlier records, so a record never changes after it is emitted.
+- The calls of one assistant message run in order. A call to a watched tool whose decision has `watch` entries for that action index is **gated**: the session emits `gate` and blocks until `decide(gate_id, verdict)`. On `approve` the tool runs. On `deny` it does not run, and the tool result is `denied: the user declined this action`. Ungated calls run at once.
+- With `rivals_k > 0`, a gate starts `rivals.rivals(...)` for that decision in a background thread and emits `rivals` when it returns. The gate does not wait for it.
+- `why(question)` runs `explain.why` over the current ledger and emits `why`. It may run while a gate is open.
+- `stop()` ends the run: an open gate is denied and the loop exits after the current step.
+- One run per session. Starting a second while one runs is an error.
+
+### 11.2 Events
+
+Every event is a JSON object with `seq` (0, 1, 2, … per session) and `type`:
+
+| type | fields |
+|---|---|
+| `hello` | `task`, `watch` (list), `model`, `scenario` (name or null), `replay` (bool) |
+| `status` | `state`: `idle`, `running`, `waiting` (a gate is open), `done`, `error` |
+| `record` | `record` (ledger record as tagged), `origin` (label from `cli.origins` for tool events, `"the task"` for goal events, else null) |
+| `gate` | `gate_id` (`g1`, `g2`, …), `decision` (id), `action` (index), `call` (`{name, args}`), `taints` (the decision's `watch` entries for this action, each plus `value` and `label`, where label is the source's origin, or `"nowhere in the run"` when source is null) |
+| `rivals` | `decision`, `rivals` (§6.4 record) |
+| `resolved` | `gate_id`, `verdict` (`approve` or `deny`) |
+| `final` | `decision`, `text` |
+| `why` | `question`, `result` (`explain.why` result plus `model`) |
+| `error` | `message` (never contains the API key) |
+
+### 11.3 Server
+
+`python -m causeway.companion [SCENARIO] [--watch send_email,write_file] [--rivals K] [--port 8770] [--base-url URL] [--model NAME] [--replay TRANSCRIPT.json] [--pace SECONDS] [--quest]`
+
+- Stdlib `ThreadingHTTPServer` bound to `127.0.0.1` only. SCENARIO is a demo scenario name or folder (default `address_swap`). Its sandbox is copied to a temp folder per run and removed afterwards.
+- `GET /` serves `static/index.html`. `GET /static/<path>` serves files under the package's `static/` folder and nothing outside it.
+- `GET /events` is Server-Sent Events: each event is one `data: <json>\n\n` frame. A new connection first gets every event so far, in order, then live ones. A comment line `: ping` goes out every 15 s.
+- `POST /start` `{"task"?: string}` starts the run (default: the scenario's `task.txt`). 409 if one is running.
+- `POST /decide` `{"gate_id", "verdict"}`. 404 for an unknown or already-resolved gate.
+- `POST /why` `{"question"}` returns 202 at once; the answer arrives as a `why` event.
+- `POST /reset` stops any run and starts a fresh session (new seq from 0, events cleared; connected streams get a `hello`).
+- `GET /ledger` returns the current ledger as JSON.
+- `--replay TRANSCRIPT.json` replaces the model with the transcript's own assistant messages in order (a `FakeClient`), so a recorded run can be shown with no key and no network. Tools still run in the scenario sandbox. `--pace` (default 1.5 s in replay, 0 otherwise) waits before each model response, so the replay plays at reading speed. Rivals and `why` still need a model; in replay they use `--base-url`/`--model` when a key is available and emit `error` otherwise.
+- `--quest` runs `adb reverse tcp:PORT tcp:PORT` and opens `http://localhost:PORT/` in the Quest browser (`com.oculus.browser`). The page is then a secure context, which WebXR requires, and nothing listens on the network.
+
+### 11.4 Scene (`static/`)
+
+One page, three.js vendored under `static/vendor/three/` (no CDN, works offline), loaded with an import map.
+
+- **Companion** at about 1 m in front of the user, a little below eye level. `static/companion.glb`, when present, must have nodes named `Body` and `Mask`, and the mask lifts by rotating `Mask` about its own origin. Without the file, a procedural stand-in is drawn: a dark horned body and a pale round mask with a cute face.
+- **Records as cards.** Events (what the agent read) stack in an arc on the left, decisions on the right, newest nearest. Each card shows id, a short label (origin or action) and the tag, colored as in the viewer: IN `#d4a24c`, CARRY `#e9953a`, GOAL `#8fb3d9`, SELF `#a78bfa`, UNSOURCED `#ef5b5b`, PROSE `#9aa3af`, LIT `#4d5560`.
+- **Threads** run from each decision card to the cards of its cause sources, in the tag's color. An `UNSOURCED` cause ends in an open, dangling thread.
+- **Gate.** On `gate`, the mask lifts and a panel appears in front of the companion: the call, one line per taint (`to = dana.ortiz@lab-mail.example ← read_file(notes/b.md) [IN]`), then rivals splits when they arrive (`he'd send to: dana.ortiz@… 3 · dana@lab.example 2`), and **Approve** and **Deny** buttons. On `resolved`, the panel closes and the mask settles.
+- **Why.** After `final`, or while a gate is open, preset question buttons (for example "Why this recipient?") post to `/why`. The answer panel lists supported claims with their cited ids and struck claims struck through.
+- **Input.** Controllers or hands select by ray (WebXR `select`). On desktop the same scene renders in a normal canvas, with mouse drag to look and click to select, so it can be developed and tested without a headset. An **Enter XR** button uses `immersive-ar` (passthrough) when supported, else `immersive-vr`.
+- A **Start** button posts `/start`. The page reconnects to `/events` after a drop and rebuilds the scene from the replayed events.

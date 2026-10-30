@@ -28,6 +28,8 @@ from causeway.client import DEFAULT_BASE_URL, DEFAULT_MODEL, REASONING_EFFORTS, 
 ACTION_WIDTH = 60
 ECHO_BADGE = "ECHO←"
 WATCH_MARK = "⚠"
+SPLIT_MARK = "~"
+NO_VALUE = "(none)"
 COLUMNS = ("id", "step", "actions", "tag", "echo", "sources")
 RIVALS_COLUMN = "margin"
 WHY_SUPPORTED = 0
@@ -63,7 +65,8 @@ def _margin_cell(record: dict) -> str:
 
 def render_table(records: list[dict]) -> str:
     """One row per decision: id, step, actions, tag, echo badge, unique source ids in cause order, and
-    the rival margin. The margin column appears only when some decision has rivals."""
+    the rival margin. The margin column appears only when some decision has rivals. The taint lines follow the
+    table, then the rival split lines."""
     decisions = [record for record in records if record.get("kind") == "decision"]
     with_margin = any(record.get("rivals") for record in decisions)
     header = list(COLUMNS) + ([RIVALS_COLUMN] if with_margin else [])
@@ -88,7 +91,7 @@ def render_table(records: list[dict]) -> str:
     for row in rows:
         cells = [cell.ljust(width) for cell, width in zip(row[:-1], widths[:-1])] + [row[-1]]
         lines.append("  ".join(cells).rstrip())
-    return "\n".join(lines) + "\n" + render_taints(records)
+    return "\n".join(lines) + "\n" + render_taints(records) + render_splits(records)
 
 
 def origins(records: list[dict]) -> dict[str, str]:
@@ -140,6 +143,38 @@ def _atom_span(base: str, atoms: list[str]) -> str:
     return f"{base}~{','.join(atoms)}"
 
 
+def render_splits(records: list[dict]) -> str:
+    """One line per rival split that is a near miss or an upset (§6.4): the decision, call and path, then each value
+    with its count, in record order."""
+    lines = []
+    for record in records:
+        for split in (record.get("rivals") or {}).get("splits") or []:
+            if not (split.get("near_miss") or split.get("upset")):
+                continue
+            name = record["actions"][split["action"]]["name"]
+            votes = " · ".join(f"{_split_value(vote['value'])} {vote['count']}" for vote in split["votes"])
+            lines.append(_printable(f"{SPLIT_MARK} {record['id']} {name}.{split['path']}: {votes}") + "\n")
+    return ("\n" + "".join(lines)) if lines else ""
+
+
+def _printable(text: str) -> str:
+    """Text with each unprintable character (ESC and other controls, bidi overrides) written as a \\u escape, so a
+    value a rival sampled cannot rewrite the terminal."""
+    return "".join(
+        char if char.isprintable() else (f"\\u{ord(char):04x}" if ord(char) <= 0xFFFF else f"\\U{ord(char):08x}")
+        for char in text
+    )
+
+
+def _split_value(value: Any) -> str:
+    """A string as itself, null as (none), anything else as JSON."""
+    if value is None:
+        return NO_VALUE
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
 def load_transcript(path: str) -> tuple[list[dict], list[dict] | None]:
     """Return (messages, tools). A transcript is a JSON list of messages, or an object whose messages key holds
     that list and whose optional tools key holds the tool definitions (None when absent)."""
@@ -184,7 +219,8 @@ def _claim_text(claim: Any) -> str:
 
 
 def format_rivals(decisions: list[dict]) -> str:
-    """One line per decision: id, margin, and 'near miss' or 'upset' when it is one."""
+    """One line per decision: id, margin, and 'near miss' or 'upset' when it is one. The split lines of
+    render_splits follow."""
     lines = []
     for record in decisions:
         rivals_record = record["rivals"]
@@ -194,7 +230,7 @@ def format_rivals(decisions: list[dict]) -> str:
         elif rivals_record["near_miss"]:
             line += "  near miss"
         lines.append(line + "\n")
-    return "".join(lines)
+    return "".join(lines) + render_splits(decisions)
 
 
 def _fail(exc: BaseException, code: int) -> int:
@@ -248,6 +284,7 @@ def _cmd_why(args: argparse.Namespace, client: Any = None) -> int:
     finally:
         if client is None:
             chat.close()
+    result["model"] = args.model
     if args.json_out:
         try:
             Path(args.json_out).write_bytes(
