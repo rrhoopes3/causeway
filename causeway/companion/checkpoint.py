@@ -8,7 +8,6 @@ Pure logic, no HTTP.
 
 from __future__ import annotations
 
-import itertools
 import json
 from pathlib import Path
 from typing import Any
@@ -19,7 +18,6 @@ READ = "read"
 SOURCES = "sources"
 MUSE = "muse"
 MAX_VALUE = 80
-_NUMBERS = itertools.count(1)
 STANDBY_TASK = "Waiting for Muse to check an action. Give Muse this server's MCP URL and key."
 
 MESSAGES = {
@@ -57,7 +55,7 @@ def finding(action: str, taint: dict[str, Any]) -> str:
 
 class Checkpoint(Session):
     """A session whose run is one reported action instead of an agent loop. start() tags it and, when it is
-    tainted, opens a gate. outcome() says where it stands. Gate ids (c7-g1) are unique across checkpoints, so a late
+    tainted, opens a gate. outcome() says where it stands. Gate ids are unique across sessions, so a late
     checkpoint_result never reads a newer check's decision."""
 
     def __init__(
@@ -77,7 +75,6 @@ class Checkpoint(Session):
         self._cleared = False
         super().__init__(
             request, Path("."), None, [action], emit=emit, model=model, why_client=why_client,
-            gate_prefix=f"c{next(_NUMBERS)}-g",
         )
 
     def _loop(self) -> None:

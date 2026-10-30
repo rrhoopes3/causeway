@@ -69,6 +69,7 @@ export function applyEvent(state, ev) {
       return true;
     case 'error':
       state.errors.push(ev.message);
+      if (ev.operation === 'why' && state.asking === ev.question) state.asking = null;
       return true;
     default:
       return false;

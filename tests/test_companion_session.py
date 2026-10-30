@@ -156,7 +156,7 @@ def test_records_match_the_offline_ledger_and_are_emitted_once(sandbox):
     client, session = _session(sandbox, _email_script(), events)
     session.start()
     events.wait("gate")
-    session.decide("g1", "approve")
+    session.decide(events.wait("gate")["gate_id"], "approve")
     events.wait("status", state="done")
     emitted = [e["record"] for e in events.of("record")]
     offline = transcript.to_ledger(client.calls[-1]["messages"] + [_email_script()[-1]["choices"][0]["message"]], model="test-model", watch=WATCH)
@@ -177,7 +177,7 @@ def test_second_start_is_an_error(sandbox):
 
 def test_tainted_send_email_opens_a_gate_with_values_and_labels(sandbox):
     events, _, session, gate = _gated(sandbox)
-    assert gate["gate_id"] == "g1"
+    assert gate["gate_id"].endswith("-g1")
     assert gate["decision"] == "d2"
     assert gate["action"] == 0
     assert gate["call"] == {"name": "send_email", "args": {"to": "dana@lab.example", "subject": "weekly summary", "body": BODY}}
@@ -197,7 +197,7 @@ def test_approve_runs_the_tool(sandbox):
     events.wait("status", state="done")
     assert _outbox(sandbox) == [{"to": "dana@lab.example", "subject": "weekly summary", "body": BODY}]
     resolved = events.wait("resolved")
-    assert resolved == {"seq": resolved["seq"], "type": "resolved", "gate_id": "g1", "verdict": "approve"}
+    assert resolved == {"seq": resolved["seq"], "type": "resolved", "gate_id": gate["gate_id"], "verdict": "approve"}
     after = [e["type"] if e["type"] != "status" else e["state"] for e in events.items if e["seq"] > gate["seq"]]
     assert after[:3] == ["waiting", "resolved", "running"]
     assert client.calls[2]["messages"][-1] == {"role": "tool", "tool_call_id": "call_2", "content": "queued"}
@@ -242,7 +242,7 @@ def test_stop_with_an_open_gate_denies_it_and_ends_the_run(sandbox):
     session.stop()
     events.wait("status", state="done")
     assert session.join(WAIT)
-    assert events.of("resolved") == [{"seq": gate["seq"] + 2, "type": "resolved", "gate_id": "g1", "verdict": "deny"}]
+    assert events.of("resolved") == [{"seq": gate["seq"] + 2, "type": "resolved", "gate_id": gate["gate_id"], "verdict": "deny"}]
     assert _outbox(sandbox) == []
     assert len(client.calls) == 2
     assert events.items[-1]["type"] == "status" and events.items[-1]["state"] == "done"
@@ -304,7 +304,7 @@ def test_why_without_a_model_is_an_error_event(sandbox):
     events = Events()
     _, session = _session(sandbox, [], events, why_client=FailingClient(RuntimeError("no model in this replay")))
     session.why("Why?").join(WAIT)
-    assert events.of("error") == [{"seq": 2, "type": "error", "message": "why failed: RuntimeError: no model in this replay"}]
+    assert events.of("error") == [{"seq": 2, "type": "error", "operation": "why", "question": "Why?", "message": "why failed: RuntimeError: no model in this replay"}]
     assert session.state == "idle"
 
 

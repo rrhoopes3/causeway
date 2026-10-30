@@ -271,6 +271,8 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self) -> None:
+        if not self._local_request():
+            return
         path = urlsplit(self.path).path
         if path == "/":
             self._file(resolve_static(self.app.static_dir, "index.html"))
@@ -284,6 +286,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_HEAD(self) -> None:
+        if not self._local_request(head=True):
+            return
         path = urlsplit(self.path).path
         if path == "/":
             self._file(resolve_static(self.app.static_dir, "index.html"), head=True)
@@ -295,6 +299,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"}, head=True)
 
     def do_POST(self) -> None:
+        if not self._local_request(mutation=True):
+            return
         path = urlsplit(self.path).path
         if path not in ("/start", "/decide", "/why", "/reset"):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
@@ -307,6 +313,24 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as err:  # e.g. the sandbox could not be copied; the server keeps serving
             status, payload = HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"{type(err).__name__}: {err}"}
         self._json(status, payload)
+
+    def _local_request(self, mutation: bool = False, head: bool = False) -> bool:
+        """Reject DNS rebinding and browser request forgery; non-browser JSON clients need no Origin."""
+        hosts = {f"127.0.0.1:{self.app.port}", f"localhost:{self.app.port}"}
+        if self.app.port == 80:
+            hosts.update(("127.0.0.1", "localhost"))
+        host = self.headers.get("Host", "").lower()
+        if len(self.headers.get_all("Host", [])) != 1 or host not in hosts:
+            self._json(HTTPStatus.FORBIDDEN, {"error": "local Host required"}, head)
+            return False
+        origins = self.headers.get_all("Origin", [])
+        if origins and (len(origins) != 1 or origins[0].lower() != f"http://{host}"):
+            self._json(HTTPStatus.FORBIDDEN, {"error": "same-origin request required"}, head)
+            return False
+        if mutation and self.headers.get_content_type() != "application/json":
+            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "application/json required"})
+            return False
+        return True
 
     def _route(self, path: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         if path == "/start":

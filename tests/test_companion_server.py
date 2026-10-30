@@ -293,7 +293,7 @@ def test_events_send_a_ping_comment_when_idle(serve):
 def test_a_dropped_stream_does_not_stop_emission(serve):
     app, http = serve(GATED, ping_seconds=0.05)
     raw = socket.create_connection(("127.0.0.1", app.port), timeout=WAIT)
-    raw.sendall(b"GET /events HTTP/1.1\r\nHost: localhost\r\n\r\n")
+    raw.sendall(f"GET /events HTTP/1.1\r\nHost: localhost:{app.port}\r\n\r\n".encode("ascii"))
     received = b""
     while b"hello" not in received:
         chunk = raw.recv(4096)
@@ -409,7 +409,7 @@ def test_reset_stops_the_run_and_starts_over_from_seq_0(serve):
         http.post("start", json={})
         stream.until("gate")
         old = app.session
-        assert http.post("reset").status_code == 200
+        assert http.post("reset", json={}).status_code == 200
         hello = stream.until("hello")[-1]
         assert hello["seq"] == 0
         assert old.join(WAIT)
@@ -417,6 +417,84 @@ def test_reset_stops_the_run_and_starts_over_from_seq_0(serve):
         assert app.hub.events() == [hello, {"seq": 1, "type": "status", "state": "idle"}]
         assert app.session is not old and not app.session.started
     finally:
+        stream.close()
+
+
+# request forgery and stale approvals
+
+
+@pytest.mark.parametrize("origin", ["http://127.0.0.1:45678", "https://attacker.example", "null"])
+@pytest.mark.parametrize("path", ["start", "decide", "why", "reset"])
+def test_controls_reject_foreign_origins(serve, origin, path):
+    app, http = serve(GATED)
+    initial = app.session
+    response = http.post(path, json={}, headers={"Origin": origin})
+    assert response.status_code == 403
+    assert app.session is initial and not initial.started
+
+
+@pytest.mark.parametrize("content_type", [None, "text/plain", "application/x-www-form-urlencoded", "multipart/form-data"])
+def test_simple_browser_requests_cannot_approve_a_gate(serve, content_type):
+    app, http = serve(GATED)
+    stream = Stream(http)
+    try:
+        http.post("start", json={})
+        gate = stream.until("gate")[-1]
+        headers = {"Content-Type": content_type} if content_type else {}
+        response = http.post("decide", content=json.dumps({"gate_id": gate["gate_id"], "verdict": "approve"}), headers=headers)
+        assert response.status_code == 415
+        assert app.session.state == "waiting"
+        assert not (app.session.sandbox / "outbox.jsonl").exists()
+    finally:
+        app.session.stop()
+        stream.close()
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1"])
+def test_same_origin_json_can_approve_a_gate(serve, host):
+    app, http = serve(GATED)
+    stream = Stream(http)
+    try:
+        http.post("start", json={})
+        gate = stream.until("gate")[-1]
+        authority = f"{host}:{app.port}"
+        response = http.post("decide", json={"gate_id": gate["gate_id"], "verdict": "approve"}, headers={"Host": authority, "Origin": f"http://{authority}"})
+        assert response.status_code == 200
+        assert app.session.join(WAIT)
+        assert (app.session.sandbox / "outbox.jsonl").exists()
+    finally:
+        app.session.stop()
+        stream.close()
+
+
+@pytest.mark.parametrize("method,path", [("GET", "ledger"), ("HEAD", ""), ("POST", "reset")])
+def test_foreign_host_cannot_rebind_to_companion(serve, method, path):
+    app, http = serve(UNGATED)
+    initial = app.session
+    response = http.request(method, path, headers={"Host": f"attacker.example:{app.port}"}, json={})
+    assert response.status_code == 403
+    assert app.session is initial
+
+
+def test_stale_approval_cannot_resolve_a_new_sessions_gate(serve):
+    app, http = serve(GATED)
+    stream = Stream(http)
+    try:
+        http.post("start", json={})
+        old_gate = stream.until("gate")[-1]
+        assert http.post("reset", json={}).status_code == 200
+        stream.until("hello")
+        assert http.post("start", json={"task": "Send another report"}).status_code == 202
+        new_gate = stream.until("gate")[-1]
+        assert old_gate["gate_id"] != new_gate["gate_id"]
+        response = http.post("decide", json={"gate_id": old_gate["gate_id"], "verdict": "approve"})
+        assert response.status_code == 404
+        assert app.session.state == "waiting"
+        assert not (app.session.sandbox / "outbox.jsonl").exists()
+        assert http.post("decide", json={"gate_id": new_gate["gate_id"], "verdict": "deny"}).status_code == 200
+        assert app.session.join(WAIT)
+    finally:
+        app.session.stop()
         stream.close()
 
 

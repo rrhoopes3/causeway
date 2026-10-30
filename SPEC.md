@@ -264,6 +264,7 @@ Cut order if time runs short: 7's voice, then 7's WebXR (keep the 2D web view), 
 - `py -3.12 -m pytest` runs offline and must pass before every commit. GitHub Actions runs `pytest -m "not live"` on each push and pull request (`.github/workflows/test.yml`), installing the pinned versions in `requirements-dev.lock`.
 - Live tests are marked `@pytest.mark.live` and skipped unless a key is available.
 - Fixtures live in `tests/fixtures/*.json`, as hand-written OpenAI-format transcripts. Each fixture names the tags it expects.
+- `node --test tests/companion_ui.test.mjs` runs the companion's state and panel regressions with Node 24 and a recording canvas; GitHub Actions runs it alongside the Python suite.
 
 ## 11. Live mode: the companion (`causeway.companion`)
 
@@ -289,18 +290,19 @@ Every event is a JSON object with `seq` (0, 1, 2, … per session) and `type`:
 | `hello` | `task`, `watch` (list), `model`, `scenario` (name or null), `replay` (bool) |
 | `status` | `state`: `idle`, `running`, `waiting` (a gate is open), `done`, `error` |
 | `record` | `record` (ledger record as tagged), `origin` (label from `cli.origins` for tool events, `"the task"` for goal events, else null) |
-| `gate` | `gate_id` (`g1`, `g2`, …), `decision` (id), `action` (index), `call` (`{name, args}`), `taints` (the decision's `watch` entries for this action, each plus `value` and `label`, where label is the source's origin, or `"nowhere in the run"` when source is null) |
+| `gate` | `gate_id` (opaque string with a random session prefix, unique across runs and restarts), `decision` (id), `action` (index), `call` (`{name, args}`), `taints` (the decision's `watch` entries for this action, each plus `value` and `label`, where label is the source's origin, or `"nowhere in the run"` when source is null) |
 | `rivals` | `decision`, `rivals` (§6.4 record) |
 | `resolved` | `gate_id`, `verdict` (`approve` or `deny`) |
 | `final` | `decision`, `text` |
 | `why` | `question`, `result` (`explain.why` result plus `model`) |
-| `error` | `message` (never contains the API key) |
+| `error` | `message` (never contains the API key); failed why requests also include `operation: "why"` and `question`, so the matching pending question can be cleared |
 
 ### 11.3 Server
 
 `python -m causeway.companion [SCENARIO] [--watch send_email,write_file] [--rivals K] [--port 8770] [--base-url URL] [--model NAME] [--replay TRANSCRIPT.json] [--pace SECONDS] [--quest]`
 
 - Stdlib `ThreadingHTTPServer` bound to `127.0.0.1` only. SCENARIO is a demo scenario name or folder (default `address_swap`). Its sandbox is copied to a temp folder per run and removed afterwards.
+- Requests must name `localhost` or `127.0.0.1` and the listening port in `Host`. An `Origin`, when present, must match that HTTP origin. POST requests require `Content-Type: application/json` (including an empty reset body); foreign origins and hosts receive 403, other content types 415. This blocks browser request forgery and DNS rebinding while allowing non-browser JSON clients without an Origin header.
 - `GET /` serves `static/index.html`. `GET /static/<path>` serves files under the package's `static/` folder and nothing outside it.
 - `GET /events` is Server-Sent Events: each event is one `data: <json>\n\n` frame. A new connection first gets every event so far, in order, then live ones. A comment line `: ping` goes out every 15 s.
 - `POST /start` `{"task"?: string}` starts the run (default: the scenario's `task.txt`). 409 if one is running.
@@ -319,7 +321,8 @@ One page, three.js vendored under `static/vendor/three/` (no CDN, works offline)
 - **Records as cards.** Events (what the agent read) stack in an arc on the left, decisions on the right, newest nearest. Each card shows id, a short label (origin or action) and the tag, colored as in the viewer: IN `#d4a24c`, CARRY `#e9953a`, GOAL `#8fb3d9`, SELF `#a78bfa`, UNSOURCED `#ef5b5b`, PROSE `#9aa3af`, LIT `#4d5560`.
 - **Threads** run from each decision card to the cards of its cause sources, in the tag's color. An `UNSOURCED` cause ends in an open, dangling thread.
 - **Gate.** On `gate`, the mask lifts and a panel appears in front of the companion: the call, one line per taint (`to = dana.ortiz@lab-mail.example ← read_file(notes/b.md) [IN]`), then rivals splits when they arrive (`he'd send to: dana.ortiz@… 3 · dana@lab.example 2`), and **Approve** and **Deny** buttons. On `resolved`, the panel closes and the mask settles.
-- **Why.** After `final`, or while a gate is open, preset question buttons (for example "Why this recipient?") post to `/why`. The answer panel lists supported claims with their cited ids and struck claims struck through.
+- **Why.** After `final`, or while a gate is open, preset question buttons (for example "Why this recipient?") post to `/why`. The answer panel lists claims with quotes found and their cited ids, unproven claims with their warnings, and struck claims struck through. The count includes all three groups. A failed why request clears the pending question so the user can retry.
+- **Rival agreement.** An empty per-argument split list is not evidence of unanimity: rivals can add arguments or calls. The gate panel uses the action votes to report agreement and flags other differences when no split lines describe them.
 - **Input.** Controllers or hands select by ray (WebXR `select`). On desktop the same scene renders in a normal canvas, with mouse drag to look and click to select, so it can be developed and tested without a headset. An **Enter XR** button uses `immersive-ar` (passthrough) when supported, else `immersive-vr`.
 - A **Start** button posts `/start`. The page reconnects to `/events` after a drop and rebuilds the scene from the replayed events.
 
@@ -336,7 +339,7 @@ Meta's Muse agent accepts custom MCP servers: the user gives Muse a URL, and Mus
 3. one `read(source=<label>)` call per source, whose result is that source's text;
 4. the action as the last assistant message.
 
-It is tagged by §5 with the action's tool watched (§5.5). No taint: verdict `clear`. Taints: a gate opens in the companion (§11.2 `gate`, ids `c<n>-g1`, unique across checkpoints) and the call waits for Approve or Deny, at most `--wait` seconds (default 90, under Cloudflare's 100 s response limit), then returns `waiting` with the gate id. `checkpoint_result(gate_id)` waits again. A gate id from a replaced checkpoint gets `unknown`. Each checkpoint replaces the companion's session, and an open gate of the old one is denied.
+It is tagged by §5 with the action's tool watched (§5.5). No taint: verdict `clear`. Taints: a gate opens in the companion (§11.2 `gate`, opaque ids unique across sessions and restarts) and the call waits for Approve or Deny, at most `--wait` seconds (default 90, under Cloudflare's 100 s response limit), then returns `waiting` with the gate id. `checkpoint_result(gate_id)` waits again. A gate id from a replaced checkpoint gets `unknown`. Each checkpoint replaces the companion's session, and an open gate of the old one is denied.
 
 The result is `{verdict, gate_id, findings, message}`. A finding is a gate-panel line: `send_email.to = dana.ortiz@lab-mail.example ← read(notes/b.md)  [IN]`. Verdicts: `clear`, `approve`, `deny`, `waiting`, `unknown`.
 

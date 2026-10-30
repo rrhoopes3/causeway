@@ -225,7 +225,7 @@ function handle(event, fresh, burst) {
     default:
       break;
   }
-  if (['hello', 'why', 'gate', 'resolved', 'final', 'status'].includes(event.type)) showWhy(instant);
+  if (['hello', 'why', 'gate', 'resolved', 'final', 'status', 'error'].includes(event.type)) showWhy(instant);
   board.sync(state, state.origins);
   refresh();
 }

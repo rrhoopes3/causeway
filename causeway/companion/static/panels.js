@@ -230,7 +230,7 @@ export class GatePanel {
       ctx.font = font(30, 700, SANS);
       ctx.fillStyle = TAG_COLORS.IN;
       ctx.textBaseline = 'alphabetic';
-      if (!measuring) ctx.fillText(`⚠  ASKING FIRST · ${gate.decision} · ${gate.gate_id}`, pad, y);
+      if (!measuring) ctx.fillText(`⚠  ASKING FIRST · ${gate.decision}`, pad, y);
       y += 58;
       ctx.font = font(46, 700, MONO);
       ctx.fillStyle = INK;
@@ -286,7 +286,16 @@ export class GatePanel {
         }
         if (!splits.length) {
           y += 48;
-          if (!measuring) runs(ctx, pad, y, [[`all ${this.rivals.k + 1} samples agree`, INK, font(32, 400, SANS)]]);
+          const total = this.rivals.k + 1;
+          const agree = this.rivals.votes?.[this.rivals.chosen] || 0;
+          const summary = agree === total
+            ? `all ${total} samples agree`
+            : `${agree} of ${total} samples chose this action; other arguments or calls differ`;
+          ctx.font = font(32, 400, SANS);
+          for (const [i, line] of wrap(ctx, summary, W - pad * 2, 3).entries()) {
+            if (i) y += 42;
+            if (!measuring) runs(ctx, pad, y, [[line, INK, font(32, 400, SANS)]]);
+          }
         }
         for (const split of splits) {
           y += 48;
@@ -431,11 +440,17 @@ export class WhyBoard {
         }
       }
       const supported = result.supported || [];
+      const unproven = result.unproven || [];
       const struck = result.struck || [];
       if (supported.length) {
         y += 56;
-        if (!measuring) this.section(ctx, `SUPPORTED · ${supported.length} of ${supported.length + struck.length}`, APPROVE, pad, y);
+        if (!measuring) this.section(ctx, `QUOTE FOUND · ${supported.length} of ${supported.length + unproven.length + struck.length}`, APPROVE, pad, y);
         for (const claim of supported) y = this.claim(ctx, measuring, claim, null, pad, y, W);
+      }
+      if (unproven.length) {
+        y += 56;
+        if (!measuring) this.section(ctx, 'UNPROVEN · quote found, not proof', GOLD, pad, y);
+        for (const item of unproven) y = this.claim(ctx, measuring, item.claim || {}, item.reasons || [], pad, y, W, true);
       }
       if (struck.length) {
         y += 56;
@@ -458,10 +473,10 @@ export class WhyBoard {
     ctx.fillText(text, x, y);
   }
 
-  claim(ctx, measuring, claim, reasons, pad, y, W) {
-    const struck = Boolean(reasons);
-    const mark = struck ? '✕' : '✓';
-    const color = struck ? DENY : APPROVE;
+  claim(ctx, measuring, claim, reasons, pad, y, W, unproven = false) {
+    const struck = Boolean(reasons) && !unproven;
+    const mark = unproven ? '?' : struck ? '✕' : '✓';
+    const color = unproven ? GOLD : struck ? DENY : APPROVE;
     const ids = (claim.cites || []).map((c) => c.id);
     const indent = 44;
     ctx.font = font(30, 400, SANS);
@@ -506,7 +521,7 @@ export class WhyBoard {
       y += 38;
       if (!measuring) {
         ctx.font = font(28, 400, SANS);
-        ctx.fillStyle = rgba(DENY, 0.9);
+        ctx.fillStyle = rgba(color, 0.9);
         ctx.fillText(fit(ctx, reason, W - pad * 2 - indent), pad + indent, y);
       }
     }
