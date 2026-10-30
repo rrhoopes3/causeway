@@ -60,16 +60,40 @@ class APIError(RuntimeError):
         super().__init__(f"chat API returned HTTP {status}: {body}")
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
 def _is_meta(base_url: str) -> bool:
     return (urlparse(base_url).hostname or "") == "api.meta.ai"
+
+
+def is_meta_https(base_url: str) -> bool:
+    """Whether base_url is the Meta Model API over https, the only place the stored MODEL_API_KEY is sent."""
+    parsed = urlparse(base_url)
+    return parsed.scheme == "https" and (parsed.hostname or "") == "api.meta.ai"
+
+
+def check_key_transport(base_url: str, api_key: str | None) -> None:
+    """Raise ValueError when a key would travel in clear text.
+
+    api.meta.ai must be https. Any other host gets a key only over https, or over plain http to a loopback
+    address (a local llama.cpp, vLLM or LM Studio server on this machine). The key is never in the message.
+    """
+    parsed = urlparse(base_url)
+    host = parsed.hostname or ""
+    if _is_meta(base_url) and parsed.scheme != "https":
+        raise ValueError(f"refusing to send {KEY_NAME} to api.meta.ai over {parsed.scheme or 'no scheme'}; use https")
+    if api_key and parsed.scheme != "https" and host not in LOOPBACK_HOSTS:
+        raise ValueError(f"refusing to send an API key over {parsed.scheme or 'no scheme'} to {host or base_url}; use https")
 
 
 class ChatClient:
     """Posts to {base_url}/chat/completions and returns the parsed JSON body.
 
-    The stored MODEL_API_KEY is loaded only for api.meta.ai, so it is never sent to a local
-    or third-party server; pass api_key explicitly for those. A missing key is an error only
-    for api.meta.ai. `transport` exists so tests can pass httpx.MockTransport.
+    The stored MODEL_API_KEY is loaded only for https://api.meta.ai, so it is never sent to a local
+    or third-party server, nor over plain http; pass api_key explicitly for those. An explicit key is
+    sent only over https or to a loopback http server (check_key_transport). A missing key is an
+    error only for api.meta.ai. `transport` exists so tests can pass httpx.MockTransport.
     """
 
     def __init__(
@@ -82,7 +106,8 @@ class ChatClient:
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.api_key = api_key or (load_api_key() if _is_meta(self.base_url) else None)
+        check_key_transport(self.base_url, api_key)
+        self.api_key = api_key or (load_api_key() if is_meta_https(self.base_url) else None)
         if self.api_key is None and _is_meta(self.base_url):
             raise ValueError("MODEL_API_KEY is not set (environment or ~/.config/causeway/.env)")
         self._http = httpx.Client(timeout=timeout, transport=transport)

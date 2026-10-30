@@ -217,6 +217,8 @@ pre.actions { color: #f3e5c8; }
 .claim::before { font: 13px var(--mono); flex: 0 0 auto; }
 .claim.ok::before { content: "\2713"; color: var(--gold); }
 .claim.struck::before { content: "\2717"; color: #ef5b5b; }
+.claim.unproven::before { content: "?"; color: var(--muted); }
+.claim .label { font: 11.5px var(--mono); color: var(--faint); flex: 0 0 auto; }
 .claim .text { flex: 1 1 320px; min-width: 0; overflow-wrap: anywhere; }
 .claim.struck .text { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(239, 91, 91, 0.8); }
 .claim .pills { display: inline-flex; flex-wrap: wrap; gap: 4px; }
@@ -559,7 +561,7 @@ pre.actions { color: #f3e5c8; }
 
     var head = el('div', 'panel-head');
     head.appendChild(el('h2', null, 'Explain'));
-    if (why) head.appendChild(el('span', 'count', 'verified ' + why.ok + '/' + why.total + (why.model ? ' · answered by ' + why.model : '')));
+    if (why) head.appendChild(el('span', 'count', 'quote found ' + why.ok + '/' + why.total + (why.model ? ' · answered by ' + why.model : '')));
     panel.appendChild(head);
 
     if (question) panel.appendChild(el('p', 'question', question));
@@ -570,9 +572,11 @@ pre.actions { color: #f3e5c8; }
     panel.appendChild(el('p', 'answer', why.answer === null || why.answer === undefined
       ? '(no answer: the reply did not match the answer schema)'
       : why.answer));
+    panel.appendChild(el('p', 'muted', 'The model wrote this answer. Below, each claim shows whether its quotes were found in the records it cites. A found quote shows the record says it. It does not show the claim follows.'));
 
     (why.supported || []).forEach(function (claim) {
       var row = el('div', 'claim ok');
+      row.appendChild(el('span', 'label', 'quote found'));
       row.appendChild(el('span', 'text', claimText(claim)));
       var pills = el('span', 'pills');
       var seen = {};
@@ -584,6 +588,24 @@ pre.actions { color: #f3e5c8; }
       row.appendChild(pills);
       panel.appendChild(row);
     });
+
+    if ((why.unproven || []).length) {
+      panel.appendChild(el('h3', null, 'Quote found, not proof: a quote cannot show that something is absent'));
+      why.unproven.forEach(function (u) {
+        var row = el('div', 'claim unproven');
+        row.appendChild(el('span', 'text', claimText(u && u.claim)));
+        var cites = el('span', 'pills');
+        var seen = {};
+        ((u && u.claim && u.claim.cites) || []).forEach(function (cite) {
+          if (seen[cite.id]) return;
+          seen[cite.id] = true;
+          cites.appendChild(citePill(cite));
+        });
+        row.appendChild(cites);
+        row.appendChild(el('span', 'reasons', ((u && u.reasons) || []).join('; ')));
+        panel.appendChild(row);
+      });
+    }
 
     if ((why.struck || []).length) {
       panel.appendChild(el('h3', null, 'Struck: not shown as fact'));

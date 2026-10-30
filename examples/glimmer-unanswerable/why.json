@@ -66,6 +66,7 @@
       "text": "The agent wrote inventory.txt with the content sensor board serial numbers and arrival dates."
     }
   ],
+  "unproven": [],
   "struck": [],
   "ok": 4,
   "total": 4,

@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from causeway.client import DEFAULT_BASE_URL, APIError, load_api_key
+from causeway.client import DEFAULT_BASE_URL, APIError, check_key_transport, is_meta_https, load_api_key
 
 SAM_MODEL = "sam-3.1"
 TIMEOUT = 120
@@ -143,9 +143,12 @@ def segment(
 ) -> list[dict[str, Any]]:
     """Ask SAM 3.1 to segment `prompt` in an image and return the parsed records (see parse).
 
-    `api_key` defaults to load_api_key(). Non-2xx responses raise APIError with the key redacted.
+    `api_key` defaults to load_api_key() for https://api.meta.ai and to none elsewhere. A key is never sent over
+    plain http except to a loopback server (ValueError otherwise). Non-2xx responses raise APIError with the key
+    redacted.
     """
-    key = api_key if api_key is not None else load_api_key()
+    key = api_key if api_key is not None else (load_api_key() if is_meta_https(base_url) else None)
+    check_key_transport(base_url, key)
     body = {
         "model": SAM_MODEL,
         "input": [

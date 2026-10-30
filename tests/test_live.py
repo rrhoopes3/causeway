@@ -45,13 +45,13 @@ def test_why_end_to_end_on_the_explore_fixture(tmp_path, capsys):
     code = cli.main(["why", str(run), QUESTION, "--effort", "low", "--json", str(out)])
 
     result = json.loads(out.read_text(encoding="utf-8"))
-    assert set(result) == {"answer", "supported", "struck", "ok", "total", "raw"}
+    assert set(result) == {"answer", "supported", "unproven", "struck", "ok", "total", "raw"}
     assert isinstance(result["answer"], str)
     assert len(result["supported"]) == result["ok"]
-    assert result["ok"] + len(result["struck"]) == result["total"]
+    assert result["ok"] + len(result["unproven"]) + len(result["struck"]) == result["total"]
     assert result["total"] >= 1
     assert code == (0 if result["ok"] >= 1 else 3)
-    assert "verified" in capsys.readouterr().out
+    assert "quote found for" in capsys.readouterr().out
 
 
 def test_rivals_on_the_first_decision_only():

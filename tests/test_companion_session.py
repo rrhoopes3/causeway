@@ -294,7 +294,7 @@ def test_why_emits_the_verified_result_plus_model_while_a_gate_is_open(sandbox):
     assert result["ok"] == 1 and result["total"] == 1
     assert result["answer"] == "The address came from team.md."
     assert result["model"] == "test-model"
-    assert set(result) == {"answer", "supported", "struck", "ok", "total", "raw", "model"}
+    assert set(result) == {"answer", "supported", "unproven", "struck", "ok", "total", "raw", "model"}
     assert "[d2]" in why_client.calls[0]["messages"][-1]["content"]
     session.decide(gate["gate_id"], "deny")
     events.wait("status", state="done")
