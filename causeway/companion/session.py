@@ -40,7 +40,8 @@ class Session:
     A call to a watched tool whose decision has watch entries for that call's index waits for decide(). The
     constructor emits `hello` and `status idle`. `rivals_client` (default: client) answers rival samples and
     `why_client` (default: rivals_client) answers why(), so neither shares the agent's scripted queue in tests.
-    `pace` seconds pass before each model call. `model` labels the run (default: the client's model).
+    `pace` seconds pass before each model call. `model` labels the run (default: the client's model). Gate ids are
+    gate_prefix plus a number (g1, g2, ...).
     """
 
     def __init__(
@@ -59,6 +60,7 @@ class Session:
         why_client: Any = None,
         scenario: str | None = None,
         replay: bool = False,
+        gate_prefix: str = "g",
     ) -> None:
         if rivals_k < 0:
             raise ValueError("rivals_k must be >= 0")
@@ -73,6 +75,7 @@ class Session:
         self.pace = pace
         self.max_steps = max_steps
         self.model = model if model is not None else getattr(client, "model", "unknown")
+        self.gate_prefix = gate_prefix
         self._send = emit or (lambda event: None)
         self._lock = threading.RLock()
         self._seq = 0
@@ -209,7 +212,7 @@ class Session:
         with self._lock:
             if self._stop.is_set():
                 return False
-            gate = _Gate(f"g{len(self._gates) + 1}")
+            gate = _Gate(f"{self.gate_prefix}{len(self._gates) + 1}")
             self._gates[gate.gate_id] = gate
             self._open = gate
             action = decision["actions"][index]

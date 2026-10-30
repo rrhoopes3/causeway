@@ -49,6 +49,17 @@ A transcript is an OpenAI-format `messages` array (optionally `{"messages": [...
 python -m causeway.demo run address_swap -o t.json --base-url http://127.0.0.1:1234/v1 --model glimmer
 ```
 
+## Keep Muse honest
+
+Causeway runs as a custom MCP server for Meta's Muse agent. Muse calls its `checkpoint` tool before it sends, buys, books or submits anything, passing your request, the raw text of what it read, and the action. Causeway tags the action. If a value came from anywhere but your request, Weebles lifts his mask in the Quest and the call waits for you to approve or deny it.
+
+```
+py -3.12 -m pip install -e .[muse]
+python -m causeway.companion.muse --tunnel --quest
+```
+
+It prints a public MCP URL and a key. Give Muse the URL; when it asks for a key, give it the key. Set `CAUSEWAY_MCP_KEY` in `~/.config/causeway/.env` to keep the same key across runs. The quick tunnel's URL changes on every run. See SPEC §12.
+
 ## License
 
 MIT

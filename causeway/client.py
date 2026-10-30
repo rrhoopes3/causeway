@@ -22,14 +22,14 @@ def default_env_path() -> Path:
     return Path.home() / ".config" / "causeway" / ".env"
 
 
-def load_api_key(env_path: str | os.PathLike[str] | None = None) -> str | None:
-    """Return MODEL_API_KEY from the environment, else from the .env file, else None.
+def load_api_key(env_path: str | os.PathLike[str] | None = None, name: str = KEY_NAME) -> str | None:
+    """Return the variable `name` (default MODEL_API_KEY) from the environment, else from the .env file, else None.
 
     A blank environment value counts as unset. In the .env file, blank lines and
     lines starting with # are skipped, and one pair of matching quotes is stripped
     from the value. The key is never printed or logged.
     """
-    env_value = os.environ.get(KEY_NAME, "").strip()
+    env_value = os.environ.get(name, "").strip()
     if env_value:
         return env_value
     path = Path(env_path) if env_path is not None else default_env_path()
@@ -42,7 +42,7 @@ def load_api_key(env_path: str | os.PathLike[str] | None = None) -> str | None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        if key.strip() != KEY_NAME:
+        if key.strip() != name:
             continue
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":

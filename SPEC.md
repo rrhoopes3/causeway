@@ -322,3 +322,32 @@ One page, three.js vendored under `static/vendor/three/` (no CDN, works offline)
 - **Why.** After `final`, or while a gate is open, preset question buttons (for example "Why this recipient?") post to `/why`. The answer panel lists supported claims with their cited ids and struck claims struck through.
 - **Input.** Controllers or hands select by ray (WebXR `select`). On desktop the same scene renders in a normal canvas, with mouse drag to look and click to select, so it can be developed and tested without a headset. An **Enter XR** button uses `immersive-ar` (passthrough) when supported, else `immersive-vr`.
 - A **Start** button posts `/start`. The page reconnects to `/events` after a drop and rebuilds the scene from the replayed events.
+
+## 12. Muse checkpoint: Causeway as a custom MCP server (`causeway.companion.muse`)
+
+Meta's Muse agent accepts custom MCP servers: the user gives Muse a URL, and Muse asks for a key when the server wants one. Muse runs in Meta's cloud, so Causeway cannot read its transcript. It can only see what Muse sends to Causeway's own tools. So Muse is asked to hand over the raw material, and the matching stays mechanical.
+
+### 12.1 Checkpoint (pure logic)
+
+`checkpoint(request, action, arguments, sources)`: `request` is the user's request word for word, `sources` a list of `{label, text}` holding the raw text of everything Muse read that informed the action, and `action`/`arguments` the call it is about to make. It becomes a transcript:
+
+1. the request as the `user` message (the goal);
+2. a `sources()` call whose result is the labels, one per line, as an agent lists a folder before reading;
+3. one `read(source=<label>)` call per source, whose result is that source's text;
+4. the action as the last assistant message.
+
+It is tagged by §5 with the action's tool watched (§5.5). No taint: verdict `clear`. Taints: a gate opens in the companion (§11.2 `gate`, ids `c<n>-g1`, unique across checkpoints) and the call waits for Approve or Deny, at most `--wait` seconds (default 90, under Cloudflare's 100 s response limit), then returns `waiting` with the gate id. `checkpoint_result(gate_id)` waits again. A gate id from a replaced checkpoint gets `unknown`. Each checkpoint replaces the companion's session, and an open gate of the old one is denied.
+
+The result is `{verdict, gate_id, findings, message}`. A finding is a gate-panel line: `send_email.to = dana.ortiz@lab-mail.example ← read(notes/b.md)  [IN]`. Verdicts: `clear`, `approve`, `deny`, `waiting`, `unknown`.
+
+**What this can and cannot show.** Muse reports its own sources. A paraphrased source makes its values look `UNSOURCED`, a false alarm, which fails safe. A compromised Muse could paste a fake source that contains the value, and Causeway would not know. The case Causeway exists for, an honest agent following an instruction planted in data, still shows: Muse hands over the note, and the recipient traces to it.
+
+### 12.2 Server
+
+`python -m causeway.companion.muse [--port 8770] [--mcp-port 8771] [--wait 90] [--tunnel] [--quest]`
+
+- FastMCP (the `muse` extra: `mcp`, `uvicorn`), stateless streamable HTTP with JSON responses at `/mcp`, on 127.0.0.1. Server instructions tell Muse when to call `checkpoint` and to copy sources exactly.
+- A key is required: `Authorization: Bearer <key>` or `X-API-Key: <key>`, or the path `/k/<key>/mcp` for a client that cannot send a header. Anything else gets 401 with `WWW-Authenticate: Bearer`. The key is `CAUSEWAY_MCP_KEY` from the environment or `~/.config/causeway/.env`, else a random one printed at start. Host-header checks are off, because requests arrive under the tunnel's hostname; the key is the guard.
+- The companion (§11.3) serves the page on 127.0.0.1 as before, starting with a standby session that tells the user to give Muse the URL. Only the MCP port is meant to face the internet.
+- `--tunnel` starts a cloudflared quick tunnel to the MCP port and prints its public URL. cloudflared is given a config file of its own, because it otherwise reads `~/.cloudflared/config.yaml`, whose named-tunnel ingress can end in `http_status:404` and override `--url`.
+- `why` questions from the page go to the Meta Model API when `MODEL_API_KEY` is set.

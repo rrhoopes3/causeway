@@ -200,6 +200,22 @@ class Companion:
             session = self.session
         return session.ledger()
 
+    def current(self) -> Session:
+        with self._lock:
+            return self.session
+
+    def adopt(self, make: Callable[[Emit], Session]) -> Session:
+        """Replace the session with make(emit), as /reset does, and start it. For runs that come from outside, such
+        as a Muse checkpoint (§12): an open gate of the replaced session is denied."""
+        with self._lock:
+            old = self.session
+            old.stop()
+            self.session = make(self.hub.reset())
+            if self.retire is not None:
+                self.retire(old)
+            self.session.start()
+            return self.session
+
     def _replace(self, task: str | None) -> None:
         old = self.session
         old.stop()
