@@ -7,6 +7,7 @@ import pytest
 from causeway import tagger
 from causeway.transcript import to_ledger
 
+# Synthetic key-shaped fixture for atom tracing. Not a real credential.
 KEY = "sk-live-9fA2b7Qx4LmZ81cD"
 
 
