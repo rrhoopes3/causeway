@@ -110,6 +110,16 @@ def test_requests_without_the_key_get_401(served, headers):
     assert response.headers["www-authenticate"].startswith("Bearer")
 
 
+def test_a_refused_large_body_still_gets_its_401(served):
+    """Muse's first call has no key. Its 401 must arrive, not a connection reset over the unread body."""
+    base, _ = served
+    body = json.dumps({"pad": "x" * 200_000})
+    with httpx.Client() as client:
+        for _ in range(10):
+            response = client.post(base + MCP_PATH, content=body, headers={"Content-Type": "application/json"})
+            assert response.status_code == 401
+
+
 def test_the_key_in_the_path_is_accepted(served):
     base, _ = served
     response = httpx.post(f"{base}/k/{KEY}{MCP_PATH}", json={}, headers={"Accept": "application/json, text/event-stream"})

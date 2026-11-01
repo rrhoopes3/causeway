@@ -300,9 +300,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         if not self._local_request(mutation=True):
+            self._discard_body()
             return
         path = urlsplit(self.path).path
         if path not in ("/start", "/decide", "/why", "/reset"):
+            self._discard_body()
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
         body = self._body()
@@ -366,6 +368,16 @@ class Handler(BaseHTTPRequestHandler):
         if body is None:
             self._json(HTTPStatus.BAD_REQUEST, {"error": "body must be a JSON object"})
         return body
+
+    def _discard_body(self) -> None:
+        """Read and drop a rejected request's body. Closing the socket with it unread resets the connection, and the
+        client can see the reset instead of the answer. A body over MAX_BODY is left unread, as for a 413."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return
+        if 0 < length <= MAX_BODY:
+            self.rfile.read(length)
 
     def _json(self, status: int, payload: Any, head: bool = False) -> None:
         self._send(status, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json", head)

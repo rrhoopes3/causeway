@@ -433,6 +433,22 @@ def test_controls_reject_foreign_origins(serve, origin, path):
     assert app.session is initial and not initial.started
 
 
+@pytest.mark.parametrize(("path", "headers", "status"), [
+    ("decide", {"Origin": "https://attacker.example"}, 403),
+    ("decide", {"Content-Type": "text/plain"}, 415),
+    ("nowhere", {}, 404),
+])
+def test_a_rejected_post_gets_its_status_not_a_reset(serve, path, headers, status):
+    """A rejected request's body is read before the connection closes. Closing with it unread resets the
+    connection, and the client can see the reset (WinError 10053) instead of the status. A large body makes
+    the reset all but certain."""
+    _, http = serve(GATED)
+    body = json.dumps({"pad": "x" * 200_000})
+    for _ in range(10):
+        response = http.post(path, content=body, headers={"Content-Type": "application/json", **headers})
+        assert response.status_code == status
+
+
 @pytest.mark.parametrize("content_type", [None, "text/plain", "application/x-www-form-urlencoded", "multipart/form-data"])
 def test_simple_browser_requests_cannot_approve_a_gate(serve, content_type):
     app, http = serve(GATED)
