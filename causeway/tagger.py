@@ -26,7 +26,7 @@ GOAL_ROLES = frozenset({"system", "developer", "user"})
 _BASE_RANK = {"UNSOURCED": 0, "IN": 1, "GOAL": 3, "SELF": 4, "PROSE": 5, "LIT": 6}
 _URL = re.compile(r"https?://\S+")
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
-_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+_NUMBER = re.compile(r"\d+(?:\.\d+)*")
 _EXTENSION = re.compile(r"\.[A-Za-z]{1,5}$")
 _TOKEN = re.compile(r"[^\W\d_]{4,}|\d{2,}")
 URL_TRAILING = ".,;:)]}'\""
@@ -50,6 +50,7 @@ _PATH_ERROR = re.compile(
     re.IGNORECASE,
 )
 _SECRET = re.compile(r"[A-Za-z0-9_\-+/=~.]{16,}")
+_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=(?=[^=])")
 SECRET_MIN = 16
 _IDENT_PUNCT = frozenset("@/\\.:_%+-")
 _JOINERS = frozenset("./\\:")
@@ -323,7 +324,12 @@ def _hit(level: str, needle: str, tokens: list[str], numeric: bool, text: str, s
         return _numeric_hit(folded_needle, folded) if numeric else _plain_hit(folded_needle, folded, separators)
     folded = text.casefold()
     matched = sum(token in folded for token in tokens)
-    return bool(tokens) and matched * 5 >= len(tokens) * 3
+    if not (tokens and matched * 5 >= len(tokens) * 3):
+        return False
+    # An address, path, URL or key inside the needle must itself be in the text, as a whole token (§5.4b).
+    # Otherwise "admin@company.example, eve@evil.example" would borrow GOAL from a task naming only admin.
+    # Numbers are left out: a subject like "Notes (Weeks 41-42)" mixes task words with numbers from a file.
+    return all(_token_hit(atom.casefold(), folded) for atom, atom_numeric in extract_atoms(needle) if not atom_numeric)
 
 
 def _best(
@@ -418,8 +424,8 @@ def extract_atoms(text: str) -> list[tuple[str, bool]]:
 
     Kinds are tried in order: URL, email, file path, opaque key, number. A later kind may not overlap an earlier
     one. An opaque key is a run of 16 or more letters, digits and _ - + / = ~ . with at least one letter and one
-    digit, such as an API key or a token. A number is \\d+(\\.\\d+)? with at least two digits, so commas always
-    separate numbers.
+    digit, such as an API key or a token. A leading NAME= is not part of the key. A number is \\d+(\\.\\d+)* with at
+    least two digits, so a version like 2.4.1 is one atom and commas always separate numbers.
     """
     claimed: list[tuple[int, int]] = []
     found: list[tuple[int, str, bool]] = []
@@ -444,6 +450,11 @@ def extract_atoms(text: str) -> list[tuple[str, bool]]:
     for match in _SECRET.finditer(text):
         value = match.group().strip(".")
         start = match.start() + (len(match.group()) - len(match.group().lstrip(".")))
+        assignment = _ASSIGNMENT.match(value)
+        if assignment is not None:
+            # NAME=value, as in an env line pasted into prose: the value is the key, not the name.
+            start += assignment.end()
+            value = value[assignment.end():]
         if len(value) >= SECRET_MIN and any(ch.isdigit() for ch in value) and any(ch.isalpha() for ch in value):
             claim(start, value, False)
     for match in _NUMBER.finditer(text):

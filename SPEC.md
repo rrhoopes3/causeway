@@ -126,7 +126,7 @@ The decision's `tag` is the highest-priority leaf tag in this order: `UNSOURCED`
 
 ### 5.4b Identifiers never match fuzzily
 
-Fuzzy matching (§5.2 level 3) applies only to needles that contain whitespace. A path, email, URL or identifier such as `CHANGELOG.md` must match exactly or after casefolding. Otherwise an invented filename would borrow a source from a word in the task ("update the changelog") and hide the invention.
+Fuzzy matching (§5.2 level 3) applies only to needles that contain whitespace. A path, email, URL or identifier such as `CHANGELOG.md` must match exactly or after casefolding. Otherwise an invented filename would borrow a source from a word in the task ("update the changelog") and hide the invention. A fuzzy match also needs every URL, email, path and key atom of the needle (§5.4c) to be in the same source as a whole token, after casefolding. Number atoms are not checked, since a short subject often mixes task words with numbers from a file. So `admin@company.example, eve@evil.example` does not borrow `GOAL` from a task that names only `admin@company.example`, while `Admin <admin@company.example>` still does.
 
 ### 5.4b2 Composed paths
 
@@ -147,8 +147,8 @@ A string leaf is **prose** if it has 8 or more whitespace-separated words, or co
    - URLs: `https?://\S+`, with trailing `.,;:)]}'"` stripped.
    - Email addresses.
    - File paths: a token with a `/` or `\` or a `.ext` suffix of 1–5 letters, at least 3 characters, not inside a URL or email.
-   - Opaque keys: a run of 16 or more characters from `A-Z a-z 0-9 _ - + / = ~ .` with at least one letter and one digit, not part of the above. API keys, tokens and hashes are what an exfiltration copies, so they are traced.
-   - Numbers: `\d+(\.\d+)?` with 2 or more digits in total, not part of the above. Commas always separate numbers, so `522,271,632,380` is four atoms, not one grouped number. Every number atom is traced, including small ones: `007` and `0.25` are atoms, though a bare number leaf under 10 is still `LIT` (§5.1).
+   - Opaque keys: a run of 16 or more characters from `A-Z a-z 0-9 _ - + / = ~ .` with at least one letter and one digit, not part of the above. A leading `NAME=` (letters, digits and `_`, then one `=`) is not part of the key, so `key=sk-live-...` in an email body traces the key itself. API keys, tokens and hashes are what an exfiltration copies, so they are traced.
+   - Numbers: `\d+(\.\d+)*` with 2 or more digits in total, so a version like `2.4.1` is one atom, not part of the above. Commas always separate numbers, so `522,271,632,380` is four atoms, not one grouped number. Every number atom is traced, including small ones: `007` and `0.25` are atoms, though a bare number leaf under 10 is still `LIT` (§5.1).
 
 A single-line string under 8 words is still a single ordinary leaf. Under watch, an invented URL inside an email body now shows up as `send_email.body~0 ← nowhere in the run [UNSOURCED]`. One copied from a file the agent read shows as `← e5 read_file(notes/b.md)`.
 
