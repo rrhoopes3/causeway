@@ -19,7 +19,7 @@ The idea comes from ConshusBot, a private research loop that tags every workspac
 ## 2. Hackathon constraints (from the participant guide)
 
 - Repo public. New work only: everything here was built from Oct 26, 2026. The README says so plainly.
-- Must use Meta models: Muse Spark via Meta Model API (explainer, rivals, demo agent); Muse Glimmer open weights on a local RTX 3090 (alternative explainer, for the open-weights bonus); Muse Voice Transcribe (ask by voice); SAM 3.1 (a tool in the demo agent).
+- Must use Meta models: Muse Spark via Meta Model API (explainer, rivals, demo agent); Muse Glimmer open weights on a local RTX 3090 (alternative explainer, for the open-weights bonus); SAM 3.1 (a tool in the demo agent). Voice input was cut early (see §9, cut order) and is not claimed.
 - 3-minute demo video showing only hackathon-built features.
 - Rubric: Impact 30, Use of Meta AI 25, Demo 25, Technical depth 20.
 
@@ -253,9 +253,9 @@ A claim is **supported** if it has at least one cite, all its cites pass, and it
 | 4 | Demo agent (Spark + tools incl. SAM 3.1) that produces real transcripts, with planted failure modes | yes | A run showing `UNSOURCED`, `ECHO` and a near miss |
 | 5 | Proxy mode: point any agent's `base_url` at Causeway, and it records with zero code changes | no | Fake-upstream test round-trips a tool conversation |
 | 6 | Muse Glimmer on the 3090 as explainer | local | Same `why` run, Glimmer answer quote-checked |
-| 7 | Viewer: web page plus WebXR lattice of the ledger on Quest; ask by voice via Voice Transcribe | yes | Recorded walk-through for the video |
+| 7 | Viewer: web page plus WebXR lattice of the ledger on Quest | yes | Recorded walk-through for the video |
 | 8 | Video, README, submission | — | Submitted before Nov 4, 9 PM ET |
-| 9 | Companion: live mode with gates and the WebXR scene (§11), replacing 5 and 7's lattice | yes | The address swap plays live on the Quest Pro: the mask lifts at `send_email`, and Deny stops the email |
+| 9 | Companion: live mode with gates (§11), replacing 5 and 7's lattice | yes | The address swap plays live through the companion: the mask lifts at `send_email`, and Deny stops the email. The Quest/WebXR scene is an optional presentation of the same gate, not a requirement |
 
 Cut order if time runs short: 7's voice, then 7's WebXR (keep the 2D web view), then 6.
 
@@ -341,7 +341,7 @@ Meta's Muse agent accepts custom MCP servers: the user gives Muse a URL, and Mus
 
 It is tagged by §5 with the action's tool watched (§5.5). No taint: verdict `clear`. Taints: a gate opens in the companion (§11.2 `gate`, opaque ids unique across sessions and restarts) and the call waits for Approve or Deny, at most `--wait` seconds (default 90, under Cloudflare's 100 s response limit), then returns `waiting` with the gate id. `checkpoint_result(gate_id)` waits again. A gate id from a replaced checkpoint gets `unknown`. Each checkpoint replaces the companion's session, and an open gate of the old one is denied.
 
-The result is `{verdict, gate_id, findings, message}`. A finding is a gate-panel line: `send_email.to = dana.ortiz@lab-mail.example ← read(notes/b.md)  [IN]`. Verdicts: `clear`, `approve`, `deny`, `waiting`, `unknown`.
+The result is `{verdict, gate_id, findings, message}`. A finding is a gate-panel line: `send_email.to = dana.ortiz@lab-mail.example ← read(notes/b.md)  [IN]`. Verdicts: `clear`, `approve`, `deny`, `waiting`, `unknown`, plus `pending` while tagging has not finished.
 
 **What this can and cannot show.** Muse reports its own sources. A paraphrased source makes its values look `UNSOURCED`, a false alarm, which fails safe. A compromised Muse could paste a fake source that contains the value, and Causeway would not know. The case Causeway exists for, an honest agent following an instruction planted in data, still shows: Muse hands over the note, and the recipient traces to it.
 

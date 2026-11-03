@@ -16,11 +16,11 @@ In a real run, Muse Spark was asked to email a summary to the lead "whose addres
 ⚠ d4 send_email.to ← e7 read_file(notes/b.md)  [IN]
 ```
 
-The recipient came from a meeting note, not from the file the user named. In another run, Muse Glimmer invented two files that don't exist and wrote one of them. Each invented path is tagged `UNSOURCED`. See [examples/](examples/) for those runs and three more, each with a ledger, a viewer page and, for three of them, a quote-checked explanation.
+The recipient came from a meeting note, not from the file the user named. In another run, Muse Glimmer invented two files that don't exist and wrote one of them. Each invented path is tagged `UNSOURCED`. See [examples/](examples/) for six runs across four scenarios, each with a ledger and a viewer page and, for three of them, a quote-checked explanation.
 
 ## Status
 
-Built during the hackathon, Oct 26 onward. Working: cause tagging (including prose atoms and composed paths), watch/taint, verified quote-checked `why` (answered by Muse Spark or a local Muse Glimmer), rivals, the HTML viewer, the live Quest companion, and a demo agent with SAM 3.1 that runs on Muse Spark or a local Muse Glimmer.
+Built during the hackathon, Oct 26 onward. Working: cause tagging (including prose atoms and composed paths), watch/taint, verified quote-checked `why` (answered by Muse Spark or a local Muse Glimmer), rivals, the HTML viewer, the companion with its approve/deny gate panel (in a desktop browser; the Quest/WebXR scene is an optional presentation of the same gate), and a demo agent with SAM 3.1 that runs on Muse Spark or a local Muse Glimmer.
 
 ## Setup
 
@@ -58,7 +58,7 @@ py -3.12 -m pip install -e .[muse]
 python -m causeway.companion.muse --tunnel --quest
 ```
 
-It prints a public MCP URL and a key. Give Muse the URL; when it asks for a key, give it the key. Set `CAUSEWAY_MCP_KEY` in `~/.config/causeway/.env` to keep the same key across runs. The quick tunnel's URL changes on every run. See SPEC §12.
+It prints a public MCP URL and a key. Give Muse the URL; when it asks for a key, give it the key, preferably as a bearer header: the `/k/<key>/mcp` path form also works, but it puts the key in the URL, which lands in logs. Set `CAUSEWAY_MCP_KEY` in `~/.config/causeway/.env` to keep the same key across runs. The quick tunnel's URL changes on every run. See SPEC §12.
 
 ## License
 
