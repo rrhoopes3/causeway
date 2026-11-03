@@ -1,0 +1,1430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>__TITLE__</title>
+<style>
+:root {
+  color-scheme: dark;
+  --room: #14110d;
+  --ink: #f3ecdf;
+  --muted: #b3a894;
+  --faint: #7d7364;
+  --plate: #1b242f;
+  --plate-edge: rgba(243, 236, 223, 0.14);
+  --brass: #d2b074;
+  --brass-dim: rgba(210, 176, 116, 0.22);
+  --c: #9aa3af;
+  --display: "Iowan Old Style", Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --sans: "Segoe UI", system-ui, sans-serif;
+  --mono: "Cascadia Mono", "Segoe UI Mono", ui-monospace, Consolas, monospace;
+}
+[data-tag="IN"] { --c: #d4a24c; }
+[data-tag="CARRY"] { --c: #e9953a; }
+[data-tag="GOAL"] { --c: #8fb3d9; }
+[data-tag="SELF"] { --c: #a78bfa; }
+[data-tag="UNSOURCED"] { --c: #ef5b5b; }
+[data-tag="PROSE"] { --c: #9aa3af; }
+[data-tag="LIT"] { --c: #6d6458; }
+[data-tag="FINAL"] { --c: #e4dccb; }
+[data-tag="NOARGS"] { --c: #6d6458; }
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--room); color: var(--ink); }
+body {
+  min-height: 100vh;
+  font: 15px/1.45 var(--sans);
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 22px 22px 48px; }
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px 28px;
+  margin-bottom: 14px;
+}
+.kicker {
+  color: var(--brass);
+  font: 11px/1 var(--mono);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+h1 {
+  margin: 6px 0 4px;
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.meta { margin: 0; color: var(--muted); font: 12px/1.5 var(--mono); }
+.counts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.count {
+  font: 12px var(--mono);
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--plate-edge);
+  color: var(--ink);
+}
+.count[data-tag] { border-color: var(--c); color: var(--c); }
+.xr-box { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 340px; }
+#enter-xr {
+  appearance: none;
+  font: 12px/1 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--brass);
+  border-radius: 999px;
+  padding: 12px 18px;
+  min-height: 44px;
+  cursor: pointer;
+}
+#enter-xr:hover { background: rgba(210, 176, 116, 0.12); }
+#enter-xr:focus-visible, .chip:focus-visible, .plate:focus-visible, .pill:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 3px;
+}
+#xr-status, #pin-status { margin: 0; color: var(--muted); font: 12.5px/1.45 var(--sans); }
+#xr-status { text-align: right; min-height: 1.45em; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 0 0 8px; color: var(--muted); font-size: 12.5px; }
+.legend-item { display: inline-flex; align-items: center; gap: 7px; }
+.note { margin: 0 0 10px; color: var(--faint); font-size: 12.5px; }
+
+.stage {
+  position: relative;
+  height: min(68vh, 680px);
+  min-height: 520px;
+  perspective: 1200px;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #100e0c;
+  box-shadow: inset 0 0 0 1px rgba(210, 176, 116, 0.16);
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+.stage:active { cursor: grabbing; }
+.world {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  width: 0;
+  height: 0;
+  transform-style: preserve-3d;
+}
+.floor {
+  position: absolute;
+  width: 1680px;
+  height: 980px;
+  margin-left: -840px;
+  margin-top: -490px;
+  transform: translate3d(0, 210px, 0) rotateX(90deg);
+  background-image:
+    linear-gradient(rgba(210, 176, 116, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(210, 176, 116, 0.16) 1px, transparent 1px);
+  background-size: 52px 52px;
+  background-position: center;
+  pointer-events: none;
+}
+.curves {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2;
+}
+.curves path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 1.7;
+  stroke-opacity: 0.72;
+}
+.curves path.hot { stroke-width: 3; stroke-opacity: 1; }
+.curves path.dim { stroke-opacity: 0.06; }
+.world.focused .chip:not(.hot),
+.world.focused .plate:not(.hot),
+.world.focused .step-label { opacity: 0.34; }
+
+.chip, .plate, .step-label { position: absolute; left: 0; top: 0; }
+.chip, .plate {
+  transform-style: preserve-3d;
+  border-radius: 16px;
+  border: 1px solid var(--c, var(--plate-edge));
+  background: var(--plate);
+  color: var(--ink);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+.chip {
+  width: 188px;
+  padding: 8px 10px 9px;
+  text-align: left;
+  cursor: pointer;
+}
+.chip .row, .plate .row { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.chip .id, .plate .id { font: 600 13px/1.2 var(--mono); }
+.chip .tg, .cause-row .tg { font: 10px/1 var(--mono); letter-spacing: 0.08em; color: var(--c); }
+.chip .act, .plate .name {
+  display: block;
+  margin-top: 4px;
+  font: 11.5px/1.35 var(--mono);
+  color: #e7dfd2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip.pinned {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 2px var(--brass), 0 16px 30px rgba(0, 0, 0, 0.4);
+}
+.chip.static {
+  position: static;
+  width: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  box-shadow: none;
+  cursor: default;
+  font: 10.5px/1.4 var(--mono);
+  letter-spacing: 0.06em;
+}
+.plate {
+  width: 156px;
+  padding: 7px 9px;
+  cursor: pointer;
+  background: #161d27;
+}
+.plate.goal { border-color: #8fb3d9; }
+.step-label {
+  font: 10px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.detail {
+  margin-top: 12px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #1a1612;
+  box-shadow: inset 0 0 0 1px var(--brass-dim);
+}
+.detail h2 { margin: 0 0 6px; font: 12px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--brass); }
+.cause-row { margin: 0 0 4px; font: 12px/1.4 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.why { margin-top: 14px; color: var(--ink); }
+.why h2 { margin: 0 0 6px; font: 12px/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.question { margin: 0 0 6px; color: var(--brass); }
+.claim { margin: 0 0 6px; }
+.claim.struck { color: var(--muted); }
+.pill {
+  font: 11px var(--mono);
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--plate-edge);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.foot { margin: 14px 0 0; color: var(--faint); font-size: 12.5px; }
+#xr-gl {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+@media (max-width: 720px) {
+  h1 { font-size: 28px; }
+  .xr-box { align-items: flex-start; }
+  #xr-status { text-align: left; }
+  .stage { min-height: 460px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chip, .plate, .curves path { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="masthead">
+    <div>
+      <div class="kicker">Spatial ledger</div>
+      <h1 id="title"></h1>
+      <p class="meta" id="meta"></p>
+      <div class="counts" id="counts"></div>
+    </div>
+    <div class="xr-box">
+      <button type="button" id="enter-xr">Enter XR</button>
+      <p id="xr-status" role="status"></p>
+    </div>
+  </header>
+  <div class="legend" id="legend" aria-label="Cause tags"></div>
+  <p class="note" id="note">Drag the empty table to turn the lattice. Click a decision chip to pin its cause curves. Click again or press Esc to clear.</p>
+  <p id="pin-status" role="status"></p>
+  <main class="stage" id="stage" aria-label="Ledger lattice">
+    <div class="world" id="world">
+      <div class="floor" aria-hidden="true"></div>
+    </div>
+    <svg class="curves" id="curves" aria-hidden="true" focusable="false"></svg>
+  </main>
+  <section class="detail" id="detail" hidden></section>
+  <section class="why" id="why" hidden></section>
+  <p class="foot">Cause tags are mechanical. Each curve is a ledger cause, from a decision chip to the record it cites.</p>
+</div>
+<canvas id="xr-gl" width="16" height="16" aria-hidden="true"></canvas>
+<script type="application/json" id="ledger">__LEDGER_JSON__</script>
+<script>
+(function () {
+  'use strict';
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var DOT = '·';
+  var COL = 1.35;
+  var PPM = 188;
+  var RANK = { UNSOURCED: 0, IN: 1, CARRY: 2, GOAL: 3, SELF: 4, PROSE: 5, NOARGS: 6, FINAL: 7, LIT: 8 };
+  var TAG_COLOR = {
+    IN: '#d4a24c', CARRY: '#e9953a', GOAL: '#8fb3d9', SELF: '#a78bfa', UNSOURCED: '#ef5b5b',
+    PROSE: '#9aa3af', LIT: '#6d6458', FINAL: '#e4dccb', NOARGS: '#6d6458'
+  };
+  var LEGEND = [
+    ['IN', 'input that just arrived'],
+    ['CARRY', 'input from k steps back'],
+    ['GOAL', 'the task statement'],
+    ['SELF', 'the agent’s own earlier output'],
+    ['UNSOURCED', 'nowhere earlier in the run']
+  ];
+  var VS = [
+    'attribute vec3 aPos;',
+    'attribute vec2 aUv;',
+    'uniform mat4 uViewProj;',
+    'uniform mat4 uModel;',
+    'varying vec2 vUv;',
+    'void main() {',
+    '  vUv = aUv;',
+    '  gl_Position = uViewProj * uModel * vec4(aPos, 1.0);',
+    '}'
+  ].join('\n');
+  var FS = [
+    'precision mediump float;',
+    'varying vec2 vUv;',
+    'uniform sampler2D uTex;',
+    'uniform vec4 uColor;',
+    'uniform float uUseTex;',
+    'uniform float uAlpha;',
+    'void main() {',
+    '  vec4 texel = texture2D(uTex, vUv);',
+    '  vec4 base = mix(uColor, texel, uUseTex);',
+    '  if (base.a < 0.12) discard;',
+    '  gl_FragColor = vec4(base.rgb, base.a * uAlpha);',
+    '}'
+  ].join('\n');
+
+  var DATA = JSON.parse(document.getElementById('ledger').textContent);
+  var records = DATA.records || [];
+  var header = {};
+  var byId = {};
+  var decisions = [];
+  var steps = {};
+  var goalSet = {};
+  (DATA.goal || []).forEach(function (id) { goalSet[id] = true; });
+  var labels = DATA.origins || {};
+  var shown = DATA.shown || {};
+
+  records.forEach(function (record) {
+    if (record.kind === 'header') { header = record; return; }
+    if (record.id) byId[record.id] = record;
+    if (record.kind !== 'event' && record.kind !== 'decision') return;
+    var group = steps[record.step] || (steps[record.step] = { events: [], decision: null });
+    if (record.kind === 'event') group.events.push(record);
+    else { decisions.push(record); group.decision = record; }
+  });
+
+  var stage = document.getElementById('stage');
+  var world = document.getElementById('world');
+  var svg = document.getElementById('curves');
+  var detail = document.getElementById('detail');
+  var pinStatus = document.getElementById('pin-status');
+  var enterBtn = document.getElementById('enter-xr');
+  var xrStatus = document.getElementById('xr-status');
+  var nodes = [];
+  var nodesById = {};
+  var curves = [];
+  var pinned = null;
+  var hover = null;
+  var rotX = 18;
+  var rotY = -11;
+  var drag = null;
+  var suppressClick = false;
+  var hot = {};
+  var xrSession = null;
+  var xrActive = false;
+  var xrGl = null;
+  var xrProg = null;
+  var xrReady = false;
+  var refSpace = null;
+  var sceneY = 0;
+  var sceneZ = -1.62;
+  var xrNodes = [];
+  var whiteTex = null;
+  var quadBuf = null;
+  var gridBuf = null;
+  var gridCount = 0;
+  var rayBuf = null;
+  var rayLive = false;
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function tagParts(tag) {
+    var text = String(tag || '');
+    if (text.indexOf('CARRY' + DOT) === 0) return { base: 'CARRY', k: parseInt(text.slice(6), 10) || 1 };
+    return { base: text, k: 0 };
+  }
+
+  function tagColor(tag) {
+    return TAG_COLOR[tagParts(tag).base] || TAG_COLOR.PROSE;
+  }
+
+  function shorten(value, limit) {
+    var text = typeof value === 'string' ? value : (value === undefined || value === null ? '' : JSON.stringify(value));
+    text = text.replace(/\s+/g, ' ').trim();
+    return text.length > limit ? text.slice(0, limit - 1) + '…' : text;
+  }
+
+  function compareTags(a, b) {
+    var pa = tagParts(a);
+    var pb = tagParts(b);
+    return ((RANK[pa.base] || 9) - (RANK[pb.base] || 9)) || (pa.k - pb.k) || (a < b ? -1 : a > b ? 1 : 0);
+  }
+
+  function causeTargets(cause) {
+    if (cause.tag === 'PROSE') return (cause.sources || []).slice();
+    return cause.source ? [cause.source] : [];
+  }
+
+  function place(node, lift) {
+    var z = node.z + (lift || 0);
+    node.el.style.transform = 'translate3d(' + (node.x * PPM) + 'px,' + (-node.y * PPM) + 'px,' + (z * PPM) + 'px) translate(-50%, -50%)';
+  }
+
+  function layout() {
+    var keys = Object.keys(steps).map(Number).sort(function (a, b) { return a - b; });
+    var origin = (keys.length - 1) / 2;
+    keys.forEach(function (step, index) {
+      var group = steps[step];
+      var x = (index - origin) * COL;
+      group.events.forEach(function (event, eventIndex) {
+        var name = labels[event.id] || event.name || event.role || '';
+        nodes.push({
+          id: event.id, kind: 'event', x: x, y: 0.4 + eventIndex * 0.42, z: -0.2,
+          w: 0.72, h: 0.3, tag: goalSet[event.id] ? 'GOAL' : 'PROSE',
+          lines: [event.id, name, shorten(event.text, 42)],
+          goal: !!goalSet[event.id]
+        });
+      });
+      if (group.decision) {
+        var decision = group.decision;
+        var action = decision.final ? (decision.text || 'final answer') : (shown[decision.id] || decision.tag || '');
+        nodes.push({
+          id: decision.id, kind: 'decision', x: x, y: -0.34, z: 0.14,
+          w: 0.9, h: 0.42, tag: decision.tag || '',
+          lines: [decision.id + '  ' + (decision.tag || ''), shorten(action, 28), ''],
+          goal: false
+        });
+      }
+      var label = el('div', 'step-label', 'step ' + step);
+      label.style.transform = 'translate3d(' + (x * PPM) + 'px,' + (0.78 * PPM) + 'px,0) translate(-50%, -50%)';
+      world.appendChild(label);
+    });
+    nodes.forEach(function (node) { nodesById[node.id] = node; });
+  }
+
+  function renderNodes() {
+    nodes.forEach(function (node) {
+      var record = byId[node.id];
+      if (node.kind === 'decision') {
+        var chip = el('button', 'chip');
+        chip.type = 'button';
+        chip.dataset.kind = 'decision';
+        chip.dataset.id = node.id;
+        chip.dataset.tag = tagParts(node.tag).base;
+        chip.setAttribute('aria-pressed', 'false');
+        var row = el('span', 'row');
+        row.appendChild(el('span', 'id', node.id));
+        row.appendChild(el('span', 'tg', node.tag || ''));
+        chip.appendChild(row);
+        chip.appendChild(el('span', 'act', node.lines[1] || ''));
+        var bits = [node.id, node.tag || '', node.lines[1] || ''];
+        if (record && record.watch && record.watch.length) bits.push(record.watch.length + ' tainted');
+        if (record && record.echo_of) bits.push('echo of ' + record.echo_of);
+        chip.setAttribute('aria-label', bits.filter(Boolean).join(', '));
+        chip.title = chip.getAttribute('aria-label');
+        node.el = chip;
+        bindPointer(chip, node);
+        world.appendChild(chip);
+      } else {
+        var plate = el('button', 'plate' + (node.goal ? ' goal' : ''));
+        plate.type = 'button';
+        plate.dataset.kind = 'event';
+        plate.dataset.id = node.id;
+        if (node.goal) plate.dataset.tag = 'GOAL';
+        var head = el('span', 'row');
+        head.appendChild(el('span', 'id', node.id));
+        plate.appendChild(head);
+        plate.appendChild(el('span', 'name', node.lines[1] || ''));
+        plate.setAttribute('aria-label', node.id + ' ' + (node.lines[1] || 'event'));
+        node.el = plate;
+        bindPointer(plate, node);
+        world.appendChild(plate);
+      }
+      place(node, 0);
+    });
+  }
+
+  function bindPointer(dom, node) {
+    var target = { id: node.id, kind: node.kind };
+    dom.addEventListener('mouseenter', function () { setHover(target); });
+    dom.addEventListener('mouseleave', function () { setHover(null); });
+    dom.addEventListener('pointerdown', function () { setHover(target); });
+    dom.addEventListener('pointerup', function (event) {
+      if (event.pointerType !== 'mouse') setHover(null);
+    });
+    dom.addEventListener('pointercancel', function () { setHover(null); });
+    dom.addEventListener('focus', function () { setHover(target); });
+    dom.addEventListener('blur', function () { setHover(null); });
+    dom.addEventListener('click', function (event) {
+      event.stopPropagation();
+      togglePin(target);
+    });
+    dom.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        togglePin(target);
+      }
+    });
+  }
+
+  function buildCurves() {
+    decisions.forEach(function (decision) {
+      (decision.causes || []).forEach(function (cause) {
+        var targets = causeTargets(cause);
+        targets.forEach(function (target) {
+          if (!nodesById[target] || !nodesById[decision.id]) return;
+          var path = document.createElementNS(SVG_NS, 'path');
+          path.setAttribute('stroke', tagColor(cause.tag));
+          path.dataset.tag = tagParts(cause.tag).base;
+          path.dataset.decision = decision.id;
+          path.dataset.target = target;
+          svg.appendChild(path);
+          curves.push({
+            el: path,
+            decision: decision.id,
+            target: target,
+            tag: cause.tag,
+            index: curves.length,
+            samples: null,
+            buffer: null,
+            count: 0
+          });
+        });
+      });
+    });
+  }
+
+  function renderChrome() {
+    document.getElementById('title').textContent = DATA.title || 'Causeway ledger';
+    var curveLabel = curves.length === 1 ? '1 cause curve' : curves.length + ' cause curves';
+    var decisionLabel = decisions.length === 1 ? '1 decision' : decisions.length + ' decisions';
+    document.getElementById('meta').textContent = [
+      'run ' + (header.run_id || 'unknown'),
+      'model ' + (header.model || 'unknown'),
+      decisionLabel,
+      curveLabel
+    ].join('  ·  ');
+    var counts = {};
+    decisions.forEach(function (decision) {
+      if (decision.tag) counts[decision.tag] = (counts[decision.tag] || 0) + 1;
+    });
+    var box = document.getElementById('counts');
+    box.textContent = '';
+    Object.keys(counts).sort(compareTags).forEach(function (tag) {
+      var pill = el('span', 'count', tag + ' ' + counts[tag]);
+      pill.dataset.tag = tagParts(tag).base;
+      box.appendChild(pill);
+    });
+    var legend = document.getElementById('legend');
+    legend.textContent = '';
+    LEGEND.forEach(function (entry) {
+      var item = el('span', 'legend-item');
+      var chip = el('span', 'chip static', entry[0]);
+      chip.dataset.tag = entry[0];
+      item.appendChild(chip);
+      item.appendChild(el('span', null, entry[1]));
+      legend.appendChild(item);
+    });
+    renderWhy();
+  }
+
+  function claimText(claim) {
+    if (claim && typeof claim.text === 'string') return claim.text;
+    if (claim === null || claim === undefined) return '(no claim)';
+    return JSON.stringify(claim);
+  }
+
+  function renderWhy() {
+    var panel = document.getElementById('why');
+    panel.textContent = '';
+    var why = DATA.why;
+    var question = DATA.question;
+    panel.hidden = !(why || question);
+    if (!why && !question) return;
+    var head = el('h2', null, 'Explain');
+    panel.appendChild(head);
+    if (question) panel.appendChild(el('p', 'question', question));
+    if (!why) {
+      panel.appendChild(el('p', null, 'No explanation attached.'));
+      return;
+    }
+    panel.appendChild(el('p', null, why.answer === null || why.answer === undefined
+      ? '(no answer: the reply did not match the answer schema)'
+      : why.answer));
+    (why.supported || []).forEach(function (claim) {
+      var row = el('p', 'claim');
+      row.appendChild(el('span', null, claimText(claim)));
+      var seen = {};
+      (claim.cites || []).forEach(function (cite) {
+        if (!cite || seen[cite.id]) return;
+        seen[cite.id] = true;
+        var pill = el('button', 'pill', cite.id);
+        pill.type = 'button';
+        pill.disabled = !byId[cite.id];
+        pill.addEventListener('click', function () {
+          var record = byId[cite.id];
+          if (!record) return;
+          togglePin({ id: cite.id, kind: record.kind === 'decision' ? 'decision' : 'event' });
+        });
+        row.appendChild(pill);
+      });
+      panel.appendChild(row);
+    });
+    (why.struck || []).forEach(function (struck) {
+      var row = el('p', 'claim struck');
+      row.appendChild(el('span', null, claimText(struck && struck.claim)));
+      var reasons = (struck && struck.reasons) || [];
+      if (reasons.length) row.appendChild(el('span', null, ' — ' + reasons.join('; ')));
+      panel.appendChild(row);
+    });
+  }
+
+  function curveMatches(curve, focus) {
+    if (!focus) return false;
+    if (focus.kind === 'decision') return curve.decision === focus.id;
+    return curve.target === focus.id;
+  }
+
+  function hotIds(focus) {
+    var ids = {};
+    if (!focus) return ids;
+    ids[focus.id] = true;
+    curves.forEach(function (curve) {
+      if (!curveMatches(curve, focus)) return;
+      ids[curve.decision] = true;
+      ids[curve.target] = true;
+    });
+    return ids;
+  }
+
+  function curveCount(focus) {
+    var count = 0;
+    curves.forEach(function (curve) { if (curveMatches(curve, focus)) count += 1; });
+    return count;
+  }
+
+  function describe(focus) {
+    if (!focus) return 'No chip pinned. Click a decision chip to keep its cause curves visible.';
+    var count = curveCount(focus);
+    var locked = pinned && (!hover || (hover.id === pinned.id && hover.kind === pinned.kind));
+    var verb = locked ? 'Pinned' : 'Tracing';
+    if (!count) return verb + ' ' + focus.id + '. No cause curve on this chip.';
+    return verb + ' ' + focus.id + '. ' + count + (count === 1 ? ' cause curve stays visible.' : ' cause curves stay visible.');
+  }
+
+  function fillDetail(focus) {
+    detail.textContent = '';
+    if (!focus || !pinned) { detail.hidden = true; return; }
+    detail.hidden = false;
+    var record = byId[focus.id];
+    detail.appendChild(el('h2', null, 'Pinned ' + focus.id));
+    if (!record) return;
+    if (focus.kind === 'decision') {
+      var action = record.final ? (record.text || '') : (shown[record.id] || '');
+      if (action) detail.appendChild(el('p', 'cause-row', shorten(action, 180)));
+      var causes = record.causes || [];
+      if (!causes.length) {
+        detail.appendChild(el('p', 'cause-row', 'No cause link on this decision.'));
+        return;
+      }
+      causes.forEach(function (cause) {
+        var row = el('p', 'cause-row');
+        row.dataset.tag = tagParts(cause.tag).base;
+        row.appendChild(el('span', 'tg', cause.tag || ''));
+        row.appendChild(document.createTextNode('  ' + (cause.path || '') + ' = ' + shorten(cause.value, 72)));
+        var targets = causeTargets(cause);
+        var via = targets.length ? targets.map(function (id) {
+          return id + (labels[id] ? ' ' + labels[id] : '');
+        }).join(', ') : 'nowhere earlier';
+        row.appendChild(document.createTextNode('  ← ' + via));
+        detail.appendChild(row);
+      });
+      return;
+    }
+    detail.appendChild(el('p', 'cause-row', shorten(record.text, 180)));
+    var inbound = curves.filter(function (curve) { return curve.target === focus.id; });
+    if (!inbound.length) detail.appendChild(el('p', 'cause-row', 'No decision cites this record.'));
+    inbound.forEach(function (curve) {
+      var row = el('p', 'cause-row');
+      row.dataset.tag = tagParts(curve.tag).base;
+      row.appendChild(el('span', 'tg', curve.tag || ''));
+      row.appendChild(document.createTextNode('  ← ' + curve.decision));
+      detail.appendChild(row);
+    });
+  }
+
+  function applyFocus() {
+    var focus = hover || pinned;
+    hot = hotIds(focus);
+    world.classList.toggle('focused', !!focus);
+    nodes.forEach(function (node) {
+      var on = !!hot[node.id];
+      node.el.classList.toggle('hot', on);
+      var isPinned = !!(pinned && pinned.id === node.id && pinned.kind === node.kind);
+      node.el.classList.toggle('pinned', isPinned);
+      if (node.kind === 'decision') node.el.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+      place(node, isPinned ? 0.2 : 0);
+    });
+    curves.forEach(function (curve) {
+      var on = curveMatches(curve, focus);
+      curve.el.classList.toggle('hot', on);
+      curve.el.classList.toggle('dim', !!focus && !on);
+    });
+    stage.dataset.pinned = pinned ? pinned.id : '';
+    pinStatus.textContent = describe(focus);
+    fillDetail(pinned);
+    requestDraw();
+  }
+
+  function setHover(target) {
+    if (!target && !hover) return;
+    if (target && hover && target.id === hover.id && target.kind === hover.kind) return;
+    hover = target;
+    applyFocus();
+  }
+
+  function togglePin(target) {
+    if (pinned && pinned.id === target.id && pinned.kind === target.kind) pinned = null;
+    else pinned = { id: target.id, kind: target.kind };
+    applyFocus();
+    var node = nodesById[target.id];
+    if (pinned && node && node.el) node.el.focus({ preventScroll: true });
+  }
+
+  function centerOf(dom) {
+    var rect = dom.getBoundingClientRect();
+    var box = stage.getBoundingClientRect();
+    return {
+      x: rect.left - box.left + rect.width / 2,
+      y: rect.top - box.top + rect.height / 2,
+      w: rect.width,
+      h: rect.height
+    };
+  }
+
+  function edgePoint(from, to) {
+    var dx = to.x - from.x;
+    var dy = to.y - from.y;
+    var ax = Math.abs(dx) || 1e-6;
+    var ay = Math.abs(dy) || 1e-6;
+    var t = Math.min((from.w / 2) / ax, (from.h / 2) / ay);
+    t = Math.max(0, Math.min(t, 0.92));
+    return { x: from.x + dx * t, y: from.y + dy * t };
+  }
+
+  function draw() {
+    var width = stage.clientWidth;
+    var height = stage.clientHeight;
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
+    svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+    curves.forEach(function (curve) {
+      var fromNode = nodesById[curve.decision];
+      var toNode = nodesById[curve.target];
+      if (!fromNode || !toNode) return;
+      var fromCenter = centerOf(fromNode.el);
+      var toCenter = centerOf(toNode.el);
+      var from = edgePoint(fromCenter, toCenter);
+      var to = edgePoint(toCenter, fromCenter);
+      var dx = to.x - from.x;
+      var dy = to.y - from.y;
+      var len = Math.hypot(dx, dy) || 1;
+      var bulge = 26 + (curve.index % 4) * 12;
+      var nx = -dy / len * bulge;
+      var ny = dx / len * bulge;
+      var c1x = from.x + dx * 0.33 + nx;
+      var c1y = from.y + dy * 0.33 + ny;
+      var c2x = from.x + dx * 0.66 + nx;
+      var c2y = from.y + dy * 0.66 + ny;
+      curve.el.setAttribute('d', 'M' + from.x.toFixed(1) + ' ' + from.y.toFixed(1) +
+        ' C' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ' ' + c2x.toFixed(1) + ' ' + c2y.toFixed(1) +
+        ' ' + to.x.toFixed(1) + ' ' + to.y.toFixed(1));
+    });
+  }
+
+  function requestDraw() {
+    draw();
+  }
+
+  function applyWorld() {
+    var count = Math.max(1, Object.keys(steps).length);
+    var needed = (count - 1) * COL * PPM + 560;
+    var scale = Math.min(1, Math.max(0.42, (stage.clientWidth - 36) / needed));
+    world.style.transform = 'rotateX(' + rotX.toFixed(2) + 'deg) rotateY(' + rotY.toFixed(2) + 'deg) scale(' + scale.toFixed(3) + ')';
+  }
+
+  function clamp(value, lo, hi) {
+    return Math.max(lo, Math.min(hi, value));
+  }
+
+  function bindStage() {
+    stage.addEventListener('pointerdown', function (event) {
+      if (event.button !== undefined && event.button !== 0) return;
+      if (event.target.closest && event.target.closest('.chip, .plate, .detail, button, a')) return;
+      drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+      try { stage.setPointerCapture(event.pointerId); } catch (err) { /* already released */ }
+    });
+    stage.addEventListener('pointermove', function (event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      var dx = event.clientX - drag.x;
+      var dy = event.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      rotY = clamp(rotY + dx * 0.16, -72, 72);
+      rotX = clamp(rotX - dy * 0.1, 6, 36);
+      drag.x = event.clientX;
+      drag.y = event.clientY;
+      applyWorld();
+      requestDraw();
+    });
+    function endDrag(event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      if (drag.moved) suppressClick = true;
+      drag = null;
+    }
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+    document.addEventListener('click', function (event) {
+      if (suppressClick) { suppressClick = false; return; }
+      if (event.target.closest && event.target.closest('.chip, .plate, .detail, .pill, #enter-xr')) return;
+      if (!pinned) return;
+      pinned = null;
+      applyFocus();
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape') return;
+      pinned = null;
+      hover = null;
+      applyFocus();
+    });
+    window.addEventListener('resize', function () { applyWorld(); requestDraw(); });
+    if (window.ResizeObserver) new ResizeObserver(function () { applyWorld(); requestDraw(); }).observe(stage);
+  }
+
+  function mat4() {
+    var m = new Float32Array(16);
+    m[0] = m[5] = m[10] = m[15] = 1;
+    return m;
+  }
+
+  function mul(a, b) {
+    var out = new Float32Array(16);
+    var col, row;
+    for (col = 0; col < 4; col += 1) {
+      for (row = 0; row < 4; row += 1) {
+        out[col * 4 + row] = a[row] * b[col * 4] + a[4 + row] * b[col * 4 + 1] + a[8 + row] * b[col * 4 + 2] + a[12 + row] * b[col * 4 + 3];
+      }
+    }
+    return out;
+  }
+
+  function linkProgram(gl) {
+    function compile(type, source) {
+      var shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+    var vertex = compile(gl.VERTEX_SHADER, VS);
+    var fragment = compile(gl.FRAGMENT_SHADER, FS);
+    if (!vertex || !fragment) return null;
+    var program = gl.createProgram();
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.linkProgram(program);
+    gl.deleteShader(vertex);
+    gl.deleteShader(fragment);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program);
+      return null;
+    }
+    program.loc = {
+      viewProj: gl.getUniformLocation(program, 'uViewProj'),
+      model: gl.getUniformLocation(program, 'uModel'),
+      color: gl.getUniformLocation(program, 'uColor'),
+      useTex: gl.getUniformLocation(program, 'uUseTex'),
+      alpha: gl.getUniformLocation(program, 'uAlpha'),
+      tex: gl.getUniformLocation(program, 'uTex'),
+      pos: gl.getAttribLocation(program, 'aPos'),
+      uv: gl.getAttribLocation(program, 'aUv')
+    };
+    return program;
+  }
+
+  function roundBox(ctx, x, y, w, h, radius) {
+    var r = Math.min(radius, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function hexRgb(hex) {
+    var value = parseInt(hex.slice(1), 16);
+    return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255];
+  }
+
+  function paintPlate(canvas, lines, hex) {
+    var ctx = canvas.getContext('2d');
+    var w = canvas.width;
+    var h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    roundBox(ctx, 12, 12, w - 24, h - 24, 36);
+    ctx.fillStyle = '#1b242f';
+    ctx.fill();
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = hex;
+    ctx.stroke();
+    ctx.fillStyle = '#f3ecdf';
+    ctx.font = '600 54px Segoe UI, sans-serif';
+    ctx.fillText(lines[0] || '', 36, 92);
+    ctx.fillStyle = hex;
+    ctx.font = '600 32px Segoe UI Mono, Consolas, monospace';
+    if (lines[1]) ctx.fillText(lines[1], 36, 148);
+    if (lines[2]) {
+      ctx.fillStyle = '#d9d0c2';
+      ctx.font = '26px Segoe UI Mono, Consolas, monospace';
+      ctx.fillText(lines[2], 36, 196);
+    }
+  }
+
+  function makeTexture(gl, canvas) {
+    var texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return texture;
+  }
+
+  function sampleCurve(from, to, index) {
+    var lift = 0.24 + (index % 4) * 0.045;
+    var p0 = [from.x, from.y, from.z];
+    var p3 = [to.x, to.y, to.z];
+    var p1 = [p0[0], p0[1] + lift * 0.2, p0[2] + lift];
+    var p2 = [p3[0], p3[1] + lift * 0.2, p3[2] + lift];
+    var out = [];
+    var step;
+    for (step = 0; step <= 18; step += 1) {
+      var t = step / 18;
+      var u = 1 - t;
+      var b0 = u * u * u;
+      var b1 = 3 * u * u * t;
+      var b2 = 3 * u * t * t;
+      var b3 = t * t * t;
+      out.push([
+        b0 * p0[0] + b1 * p1[0] + b2 * p2[0] + b3 * p3[0],
+        b0 * p0[1] + b1 * p1[1] + b2 * p2[1] + b3 * p3[1],
+        b0 * p0[2] + b1 * p1[2] + b2 * p2[2] + b3 * p3[2]
+      ]);
+    }
+    return out;
+  }
+
+  function ribbon(samples, width) {
+    var half = width * 0.5;
+    var data = [];
+    var i;
+    for (i = 0; i < samples.length; i += 1) {
+      var prev = samples[Math.max(0, i - 1)];
+      var next = samples[Math.min(samples.length - 1, i + 1)];
+      var tx = next[0] - prev[0];
+      var ty = next[1] - prev[1];
+      var sx = -ty;
+      var sy = tx;
+      var sl = Math.hypot(sx, sy) || 1;
+      sx = sx / sl * half;
+      sy = sy / sl * half;
+      var p = samples[i];
+      data.push(p[0] + sx, p[1] + sy, p[2], p[0] - sx, p[1] - sy, p[2]);
+    }
+    return new Float32Array(data);
+  }
+
+  function boardBasis(pos, cam) {
+    var nx = cam[0] - pos[0];
+    var ny = cam[1] - pos[1];
+    var nz = cam[2] - pos[2];
+    var nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    var rx = nz;
+    var ry = 0;
+    var rz = -nx;
+    var rl = Math.hypot(rx, rz);
+    if (rl < 1e-4) { rx = 1; rz = 0; rl = 1; }
+    rx /= rl; rz /= rl;
+    var ux = ny * rz - nz * ry;
+    var uy = nz * rx - nx * rz;
+    var uz = nx * ry - ny * rx;
+    return { right: [rx, ry, rz], up: [ux, uy, uz], normal: [nx, ny, nz] };
+  }
+
+  function boardMatrix(pos, basis, w, h) {
+    var m = mat4();
+    m[0] = basis.right[0] * w; m[1] = basis.right[1] * w; m[2] = basis.right[2] * w;
+    m[4] = basis.up[0] * h; m[5] = basis.up[1] * h; m[6] = basis.up[2] * h;
+    m[8] = basis.normal[0]; m[9] = basis.normal[1]; m[10] = basis.normal[2];
+    m[12] = pos[0]; m[13] = pos[1]; m[14] = pos[2];
+    return m;
+  }
+
+  function rayHit(origin, dir, pos, basis, w, h) {
+    var n = basis.normal;
+    var denom = n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2];
+    if (Math.abs(denom) < 1e-5) return null;
+    var t = ((pos[0] - origin[0]) * n[0] + (pos[1] - origin[1]) * n[1] + (pos[2] - origin[2]) * n[2]) / denom;
+    if (t < 0.05) return null;
+    var hx = origin[0] + dir[0] * t - pos[0];
+    var hy = origin[1] + dir[1] * t - pos[1];
+    var hz = origin[2] + dir[2] * t - pos[2];
+    var u = hx * basis.right[0] + hy * basis.right[1] + hz * basis.right[2];
+    var v = hx * basis.up[0] + hy * basis.up[1] + hz * basis.up[2];
+    if (Math.abs(u) <= w * 0.5 && Math.abs(v) <= h * 0.5) return t;
+    return null;
+  }
+
+  function scenePoint(node) {
+    return [node.x, node.y + sceneY, node.z + sceneZ];
+  }
+
+  function buildXrResources() {
+    if (xrReady) return;
+    var gl = xrGl;
+    whiteTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, whiteTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    quadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -0.5, -0.5, 0, 0, 0,
+      0.5, -0.5, 0, 1, 0,
+      -0.5, 0.5, 0, 0, 1,
+      -0.5, 0.5, 0, 0, 1,
+      0.5, -0.5, 0, 1, 0,
+      0.5, 0.5, 0, 1, 1
+    ]), gl.STATIC_DRAW);
+    var plate = document.createElement('canvas');
+    plate.width = 512;
+    plate.height = 256;
+    nodes.forEach(function (node) {
+      var lines = node.lines.slice();
+      if (node.kind === 'event') lines = [node.id, node.lines[1] || '', node.lines[2] || ''];
+      paintPlate(plate, lines, tagColor(node.tag));
+      node.texture = makeTexture(gl, plate);
+    });
+    var exit = {
+      id: 'exit-xr', kind: 'exit', x: -((Object.keys(steps).length - 1) / 2) * COL - 1.15, y: -0.15, z: 0.2,
+      w: 0.62, h: 0.28, tag: 'FINAL', lines: ['Exit XR', '', '']
+    };
+    paintPlate(plate, ['Exit XR', 'leave the headset', ''], TAG_COLOR.FINAL);
+    exit.texture = makeTexture(gl, plate);
+    xrNodes = nodes.concat([exit]);
+    curves.forEach(function (curve) {
+      var samples = sampleCurve(nodesById[curve.decision], nodesById[curve.target], curve.index);
+      var verts = ribbon(samples, 0.012);
+      curve.buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, curve.buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+      curve.count = samples.length * 2;
+    });
+    var grid = [];
+    var g;
+    for (g = -5; g <= 5; g += 1) {
+      grid.push(-3.2, -1.05, g * 0.42, 3.2, -1.05, g * 0.42);
+      grid.push(g * 0.46, -1.05, -2.4, g * 0.46, -1.05, 2.4);
+    }
+    gridBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, gridBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(grid), gl.STATIC_DRAW);
+    gridCount = grid.length / 3;
+    rayBuf = gl.createBuffer();
+    xrReady = true;
+  }
+
+  function bindAttrib(gl, buffer, stride, uv) {
+    var loc = xrProg.loc;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.enableVertexAttribArray(loc.pos);
+    gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, stride, 0);
+    if (uv) {
+      gl.enableVertexAttribArray(loc.uv);
+      gl.vertexAttribPointer(loc.uv, 2, gl.FLOAT, false, stride, 12);
+    } else if (loc.uv >= 0) {
+      gl.disableVertexAttribArray(loc.uv);
+      gl.vertexAttrib2f(loc.uv, 0, 0);
+    }
+  }
+
+  function drawColor(gl, buffer, mode, count, model, rgba, alpha, stride) {
+    var loc = xrProg.loc;
+    bindAttrib(gl, buffer, stride || 12, stride === 20);
+    gl.uniformMatrix4fv(loc.model, false, model);
+    gl.uniform4f(loc.color, rgba[0], rgba[1], rgba[2], rgba[3]);
+    gl.uniform1f(loc.useTex, 0);
+    gl.uniform1f(loc.alpha, alpha);
+    gl.bindTexture(gl.TEXTURE_2D, whiteTex);
+    gl.drawArrays(mode, 0, count);
+  }
+
+  function nodeAlpha(node) {
+    var focus = hover || pinned;
+    if (node.kind === 'exit') return 1;
+    if (!focus) return 1;
+    return hot[node.id] ? 1 : 0.3;
+  }
+
+  function updateHoverFromRay(frame, cam) {
+    rayLive = false;
+    var sources = frame.session.inputSources || [];
+    var best = null;
+    var bestT = 1e9;
+    var r;
+    for (r = 0; r < sources.length; r += 1) {
+      var space = sources[r].targetRaySpace;
+      if (!space) continue;
+      var pose = frame.getPose(space, refSpace);
+      if (!pose) continue;
+      var matrix = pose.transform.matrix;
+      var origin = [matrix[12], matrix[13], matrix[14]];
+      var dir = [-matrix[8], -matrix[9], -matrix[10]];
+      var n;
+      for (n = 0; n < xrNodes.length; n += 1) {
+        var node = xrNodes[n];
+        var pos = scenePoint(node);
+        var basis = boardBasis(pos, cam);
+        node.basis = basis;
+        node.world = pos;
+        var t = rayHit(origin, dir, pos, basis, node.w, node.h);
+        if (t !== null && t < bestT) { bestT = t; best = node; }
+      }
+      var tip = [origin[0] + dir[0] * 1.5, origin[1] + dir[1] * 1.5, origin[2] + dir[2] * 1.5];
+      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, rayBuf);
+      xrGl.bufferData(xrGl.ARRAY_BUFFER, new Float32Array(origin.concat(tip)), xrGl.STREAM_DRAW);
+      rayLive = true;
+    }
+    var next = best ? { id: best.id, kind: best.kind } : null;
+    if (!next && !hover) return;
+    if (next && hover && next.id === hover.id && next.kind === hover.kind) return;
+    hover = next;
+    applyFocus();
+  }
+
+  function drawScene(gl, viewProj, cam) {
+    var loc = xrProg.loc;
+    gl.useProgram(xrProg);
+    gl.uniformMatrix4fv(loc.viewProj, false, viewProj);
+    gl.uniform1i(loc.tex, 0);
+    var shift = mat4();
+    shift[13] = sceneY;
+    shift[14] = sceneZ;
+    gl.depthMask(false);
+    drawColor(gl, gridBuf, gl.LINES, gridCount, shift, [0.82, 0.69, 0.45, 1], 0.28, 12);
+    curves.forEach(function (curve) {
+      var focus = hover || pinned;
+      var on = curveMatches(curve, focus);
+      var alpha = !focus ? 0.62 : (on ? 1 : 0.07);
+      var rgb = hexRgb(tagColor(curve.tag));
+      drawColor(gl, curve.buffer, gl.TRIANGLE_STRIP, curve.count, shift, [rgb[0], rgb[1], rgb[2], 1], alpha, 12);
+    });
+    if (rayLive) drawColor(gl, rayBuf, gl.LINES, 2, mat4(), [0.82, 0.69, 0.45, 1], 0.9, 12);
+    gl.depthMask(true);
+    var i;
+    for (i = 0; i < xrNodes.length; i += 1) {
+      var node = xrNodes[i];
+      var pos = scenePoint(node);
+      var basis = boardBasis(pos, cam);
+      node.world = pos;
+      node.basis = basis;
+      var model = boardMatrix(pos, basis, node.w, node.h);
+      var isPinned = pinned && pinned.id === node.id;
+      if (isPinned) {
+        var behind = [
+          pos[0] - basis.normal[0] * 0.012,
+          pos[1] - basis.normal[1] * 0.012,
+          pos[2] - basis.normal[2] * 0.012
+        ];
+        var rgb = hexRgb(tagColor(node.tag));
+        drawColor(gl, quadBuf, gl.TRIANGLES, 6, boardMatrix(behind, basis, node.w * 1.08, node.h * 1.16), [rgb[0], rgb[1], rgb[2], 1], 1, 20);
+      }
+      bindAttrib(gl, quadBuf, 20, true);
+      gl.uniformMatrix4fv(loc.model, false, model);
+      gl.uniform4f(loc.color, 1, 1, 1, 1);
+      gl.uniform1f(loc.useTex, 1);
+      gl.uniform1f(loc.alpha, nodeAlpha(node));
+      gl.bindTexture(gl.TEXTURE_2D, node.texture || whiteTex);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+  }
+
+  function onSelect() {
+    if (!hover) return;
+    if (hover.kind === 'exit') {
+      if (xrSession) xrSession.end();
+      return;
+    }
+    if (hover.kind === 'decision' || hover.kind === 'event') togglePin(hover);
+  }
+
+  function releaseSession(session) {
+    if (xrSession !== session) return;
+    xrActive = false;
+    xrSession = null;
+    enterBtn.textContent = 'Enter XR';
+  }
+
+  function onSessionEnd(session) {
+    if (xrSession !== session) return;
+    var leftHeadset = xrActive;
+    releaseSession(session);
+    hover = null;
+    if (leftHeadset) setStatus('Left the headset. This page still shows the same ledger.');
+    applyFocus();
+  }
+
+  function abandonSession(session) {
+    var ended = !session || session.ended === true;
+    releaseSession(session);
+    if (ended || !session) return;
+    try {
+      var pending = session.end();
+      if (pending && typeof pending.catch === 'function') pending.catch(function () {});
+    } catch (err) {
+      releaseSession(session);
+    }
+  }
+
+  function startupFailure(session, message) {
+    setStatus(message);
+    abandonSession(session);
+  }
+
+  function setStatus(text) {
+    xrStatus.textContent = text;
+  }
+
+  function beginSession(session) {
+    xrSession = session;
+    xrActive = false;
+    enterBtn.textContent = 'Exit XR';
+    setStatus('In the headset. Point at a decision chip and press the trigger to pin its curves.');
+    // Before any await. Startup can end the session, and an ended session does not fire "end" again.
+    session.addEventListener('end', function () { onSessionEnd(session); });
+    if (session.ended) {
+      startupFailure(session, 'The headset view did not start (InvalidStateError). The lattice on this page is the same ledger.');
+      return;
+    }
+    var canvas = document.getElementById('xr-gl');
+    try {
+      if (!xrGl) {
+        xrGl = canvas.getContext('webgl', { xrCompatible: true, alpha: false, antialias: true, depth: true });
+      }
+    } catch (err) {
+      xrGl = null;
+    }
+    if (!xrGl || typeof xrGl.makeXRCompatible !== 'function') {
+      startupFailure(session, 'WebGL is not available, so the headset view did not start. The lattice on this page is the same ledger.');
+      return;
+    }
+    var compatible;
+    try {
+      compatible = xrGl.makeXRCompatible();
+    } catch (err) {
+      startupFailure(session, 'The headset view did not start (' + (err && err.name ? err.name : 'Error') + '). The lattice on this page is the same ledger.');
+      return;
+    }
+    Promise.resolve(compatible).then(function () {
+      xrProg = xrProg || linkProgram(xrGl);
+      if (!xrProg) throw new Error('shader');
+      buildXrResources();
+      session.updateRenderState({
+        baseLayer: new XRWebGLLayer(session, xrGl),
+        depthNear: 0.05,
+        depthFar: 40
+      });
+      return session.requestReferenceSpace('local-floor').then(function (space) {
+        sceneY = 1.28;
+        return space;
+      }, function () {
+        sceneY = 0;
+        return session.requestReferenceSpace('local');
+      });
+    }).then(function (space) {
+      if (!space || session.ended || xrSession !== session) {
+        if (xrSession === session) {
+          startupFailure(session, 'The headset view did not start (' + (session.ended ? 'InvalidStateError' : 'Error') + '). The lattice on this page is the same ledger.');
+        }
+        return;
+      }
+      refSpace = space;
+      session.addEventListener('select', onSelect);
+      glSetup(xrGl);
+      xrActive = true;
+      session.requestAnimationFrame(onFrame);
+    }).catch(function (err) {
+      startupFailure(session, 'The headset view did not start (' + (err && err.name ? err.name : 'Error') + '). The lattice on this page is the same ledger.');
+    });
+  }
+
+  function glSetup(gl) {
+    gl.enable(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.disable(gl.CULL_FACE);
+  }
+
+  function onFrame(time, frame) {
+    if (!xrSession || frame.session !== xrSession) return;
+    var layer = xrSession.renderState.baseLayer;
+    var pose = layer && frame.getViewerPose(refSpace);
+    if (!layer || !pose) {
+      xrSession.requestAnimationFrame(onFrame);
+      return;
+    }
+    var gl = xrGl;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
+    var cams = [];
+    var v;
+    for (v = 0; v < pose.views.length; v += 1) {
+      var matrix = pose.views[v].transform.matrix;
+      cams.push([matrix[12], matrix[13], matrix[14]]);
+    }
+    var cam = cams[0];
+    if (cams.length > 1) {
+      cam = [(cams[0][0] + cams[1][0]) / 2, (cams[0][1] + cams[1][1]) / 2, (cams[0][2] + cams[1][2]) / 2];
+    }
+    updateHoverFromRay(frame, cam);
+    gl.enable(gl.SCISSOR_TEST);
+    for (v = 0; v < pose.views.length; v += 1) {
+      var view = pose.views[v];
+      var vp = layer.getViewport(view);
+      gl.viewport(vp.x, vp.y, vp.width, vp.height);
+      gl.scissor(vp.x, vp.y, vp.width, vp.height);
+      gl.clearColor(0.078, 0.067, 0.051, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      drawScene(gl, mul(view.projectionMatrix, view.transform.inverse.matrix), cam);
+    }
+    xrSession.requestAnimationFrame(onFrame);
+  }
+
+  function checkShaders() {
+    var canvas = document.getElementById('xr-gl');
+    var gl = null;
+    try {
+      var probe = document.createElement('canvas');
+      gl = probe.getContext('webgl');
+    } catch (err) {
+      gl = null;
+    }
+    if (!gl) {
+      canvas.dataset.gl = 'unavailable';
+      return;
+    }
+    var program = linkProgram(gl);
+    canvas.dataset.gl = program ? 'ok' : 'fail';
+    if (!program) setStatus('Headset shaders did not compile. The lattice on this page still shows the ledger.');
+    var lose = gl.getExtension('WEBGL_lose_context');
+    if (lose) lose.loseContext();
+  }
+
+  function bindEnter() {
+    enterBtn.addEventListener('click', function () {
+      if (xrSession) {
+        xrSession.end();
+        return;
+      }
+      var xr = navigator.xr;
+      if (!xr || typeof xr.requestSession !== 'function') {
+        setStatus('No WebXR on this browser. The lattice above is the same ledger.');
+        return;
+      }
+      if (!window.isSecureContext) {
+        setStatus('WebXR needs https or localhost. The lattice above is the same ledger.');
+        return;
+      }
+      setStatus('Asking for the headset…');
+      try {
+        Promise.resolve(xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] })).then(beginSession).catch(function (err) {
+          setStatus('No immersive session (' + (err && err.name ? err.name : 'Error') + '). The lattice above is the same ledger.');
+        });
+      } catch (err) {
+        setStatus('No immersive session. The lattice above is the same ledger.');
+      }
+    });
+  }
+
+  layout();
+  renderNodes();
+  buildCurves();
+  renderChrome();
+  bindStage();
+  bindEnter();
+  applyWorld();
+  applyFocus();
+  checkShaders();
+})();
+</script>
+</body>
+</html>
