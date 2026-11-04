@@ -47,6 +47,8 @@ The **Why** button on the page asks a Meta model. It uses the Meta Model API whe
 
 ## Try it
 
+**The recorded run, with nothing to install:** [open the Spark address-swap ledger](https://rrhoopes3.github.io/causeway/examples/spark-address_swap/view.html) in a browser. Tap the `send_email.to` line to trace the recipient back to the note, and scroll to Explain for Spark's recorded answer, with a "quote found" mark on each claim.
+
 **The gate, with no Muse account and no model key:**
 
 ```
