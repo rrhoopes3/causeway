@@ -44,6 +44,8 @@ Answer only from the ledger. Every factual claim must cite at least one record i
 
 Reply with JSON only, matching the schema. "answer" is your answer as plain text. "claims" is a list of objects. Each has "text" (one claim) and "cites" (a list of objects, each with "id" and "quote")."""
 
+PROPOSED_NOTE = """Right now {action} is only proposed, not done. It is waiting for the user to approve or deny it and has not run, so nothing it would do has happened. The ledger lists it because the agent asked for it. In "answer", call it proposed and say it has not run. Never say it was sent, performed or done. Leave this out of "claims", because no record can show it."""
+
 
 def response_format() -> dict[str, Any]:
     """The strict json_schema response_format for the answer."""
@@ -53,9 +55,13 @@ def response_format() -> dict[str, Any]:
     }
 
 
-def build_messages(ledger: list[dict[str, Any]], question: str) -> list[dict[str, Any]]:
-    """System prompt, then one user message holding the rendered ledger and the question."""
-    user = f"Ledger:\n{render(ledger)}\n\nQuestion: {question}"
+def build_messages(
+    ledger: list[dict[str, Any]], question: str, proposed: str | None = None
+) -> list[dict[str, Any]]:
+    """System prompt, then one user message holding the rendered ledger and the question. `proposed` names an action
+    held at an open gate, for example "send_email in d4", and adds the note that it has not run."""
+    note = PROPOSED_NOTE.format(action=proposed) + "\n\n" if proposed else ""
+    user = f"Ledger:\n{render(ledger)}\n\n{note}Question: {question}"
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user},
@@ -67,11 +73,13 @@ def why(
     question: str,
     client: Any,
     reasoning_effort: str | None = "high",
+    proposed: str | None = None,
 ) -> dict[str, Any]:
     """Ask the model, parse its JSON and verify it. Content that is not valid JSON is
-    treated as a malformed answer. The result is verify()'s dict plus "raw", the content string."""
+    treated as a malformed answer. The result is verify()'s dict plus "raw", the content string.
+    `proposed` is as in build_messages."""
     response = client.complete(
-        build_messages(ledger, question),
+        build_messages(ledger, question, proposed),
         response_format=response_format(),
         reasoning_effort=reasoning_effort,
     )

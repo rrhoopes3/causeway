@@ -9,7 +9,8 @@ const BODY_SCALE = new THREE.Vector3(1, 1.1, 0.92);
 const FACE_TILT = 0.3;
 const MASK_R = 0.054;
 const MASK_DOME = 0.07;
-const LIFT = -2.05;
+const LIFT = -0.32; // tipped back a little, so its face still shows above the one it was hiding
+const LIFT_RISE = 0.122;
 const LIFT_TIME = 0.6;
 const LIFT_DELAY = 0.12;
 const SETTLE_TIME = 0.55;
@@ -206,6 +207,7 @@ export class Companion {
     this.lookYaw = 0;
     this.lookTarget = null;
     this.now = 0;
+    this.innerFace = null;
     this.buildProcedural();
   }
 
@@ -265,6 +267,8 @@ export class Companion {
     this.hinge.add(maskFront, maskBack, rim);
     this.maskNode = this.hinge;
     this.maskBase = this.hinge.quaternion.clone();
+    this.maskHome = this.hinge.position.clone();
+    this.maskScale = 1;
 
     const hornGeo = taperedTube(
       [new THREE.Vector3(0, -0.006, 0), new THREE.Vector3(0.008, 0.016, 0), new THREE.Vector3(0.02, 0.034, 0), new THREE.Vector3(0.036, 0.044, 0), new THREE.Vector3(0.05, 0.043, 0)],
@@ -364,6 +368,9 @@ export class Companion {
       this.rig.add(model);
       this.maskNode = maskNode;
       this.maskBase = maskNode.quaternion.clone();
+      this.maskHome = maskNode.position.clone();
+      this.maskScale = maskNode.parent.getWorldScale(new THREE.Vector3()).y / this.rig.getWorldScale(new THREE.Vector3()).y;
+      this.innerFace = model.getObjectByName('InnerFace');
       this.eyes = [];
       this.leak = null;
       this.arms = [];
@@ -372,7 +379,7 @@ export class Companion {
       const at = maskNode.getWorldPosition(new THREE.Vector3());
       this.rig.worldToLocal(at);
       this.ember.removeFromParent();
-      this.ember.position.copy(at).add(new THREE.Vector3(0, -0.02, 0.05));
+      this.ember.position.copy(at).add(new THREE.Vector3(0, -0.06, 0.06));
       this.rig.add(this.ember);
       return true;
     } catch (err) {
@@ -462,6 +469,8 @@ export class Companion {
     if (this.maskNode) {
       const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), LIFT * this.amount);
       this.maskNode.quaternion.copy(this.maskBase).multiply(q);
+      this.maskNode.position.copy(this.maskHome);
+      this.maskNode.position.y += LIFT_RISE * this.amount / this.maskScale;
     }
 
     if (t > this.blinkAt) {
@@ -477,10 +486,12 @@ export class Companion {
       halo.scale.setScalar(0.04 + 0.03 * g);
     }
     if (this.eyeMat) this.eyeMat.color.setScalar(0.35 + 0.65 * g);
+    if (this.innerFace) this.innerFace.material.emissiveIntensity = g * (0.9 + 0.1 * Math.sin(t * 7));
     if (this.leak) {
       this.leak.material.opacity = (0.14 + 0.06 * Math.sin(t * 2.2)) * (1 - g) + 0.32 * g;
     }
-    this.ember.intensity = 0.02 + 0.09 * g * (0.85 + 0.15 * Math.sin(t * 7));
+    const flicker = 0.85 + 0.15 * Math.sin(t * 7);
+    this.ember.intensity = this.innerFace ? 0.05 * g * flicker : 0.02 + 0.09 * g * flicker;
     this.aura.material.opacity = 0.16 + 0.05 * Math.sin(t * 1.3) + 0.08 * g;
     this.aura.material.color.set(g > 0.5 ? '#8a3a6a' : COLORS.aura);
 

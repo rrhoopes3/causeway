@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from causeway import ledger
-from causeway.cli import main, origins
+from causeway.cli import MAX_ORIGIN, main, origins
 
 FIXTURE = Path(__file__).parent / "fixtures" / "injection.json"
 
@@ -38,6 +38,21 @@ def test_origins_label_tool_results_and_the_task(tmp_path):
     assert labels["e5"] == "read_file(notes/b.md)"
     goal_ids = [r["id"] for r in records if r["kind"] == "event" and r["step"] == 1 and r["role"] != "tool"]
     assert goal_ids and all(labels[i] == "the task" for i in goal_ids)
+
+
+def test_long_source_labels_keep_the_end_that_tells_them_apart():
+    root = "https://raw.githubusercontent.com/rrhoopes3/causeway/main/demo/scenarios/address_swap/sandbox"
+    names = ("team.md", "notes/a.md", "notes/b.md")
+    records = []
+    for index, name in enumerate(names):
+        records.append({"kind": "decision", "actions": [{"name": "read", "call_id": f"c{index}", "args": {"source": f"{root}/{name}"}}]})
+        records.append({"kind": "event", "role": "tool", "tool_call_id": f"c{index}", "id": f"e{index}"})
+    labels = origins(records)
+    assert len({labels[f"e{index}"] for index in range(3)}) == 3
+    for index, name in enumerate(names):
+        label = labels[f"e{index}"]
+        assert label.startswith("read(https://") and label.endswith(f"{name})")
+        assert len(label) <= len("read()") + MAX_ORIGIN
 
 
 def test_atoms_from_one_source_collapse_to_one_line(tmp_path, capsys):

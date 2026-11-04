@@ -10,7 +10,8 @@ import pytest
 from causeway import transcript
 from causeway.client import APIError, FakeClient
 from causeway.companion.__main__ import replay_client
-from causeway.companion.session import DENIED, Session
+from causeway.companion.checkpoint import Checkpoint, Standby
+from causeway.companion.session import DENIED, NOT_RUN, REPLAY_DENIED, Session
 from causeway.demo.__main__ import SCENARIOS
 
 REPO = Path(__file__).resolve().parents[1]
@@ -209,7 +210,7 @@ def test_deny_skips_the_tool_and_the_model_sees_the_denial(sandbox):
     events.wait("status", state="done")
     assert _outbox(sandbox) == []
     assert client.calls[2]["messages"][-1] == {"role": "tool", "tool_call_id": "call_2", "content": DENIED}
-    assert DENIED == "denied: the user declined this action"
+    assert DENIED == "denied: the user declined this action. It was not done. Do not retry it or try another way. Reply to the user now and say plainly that it was not done."
     assert events.wait("final")["text"] == "Sent."
 
 
@@ -300,6 +301,32 @@ def test_why_emits_the_verified_result_plus_model_while_a_gate_is_open(sandbox):
     events.wait("status", state="done")
 
 
+def test_why_at_an_open_gate_tells_the_model_the_action_has_not_run(sandbox):
+    answer = _response(json.dumps({"answer": "It is proposed and has not run.", "claims": []}))
+    why_client = FakeClient([answer, answer])
+    events, _, session, gate = _gated(sandbox, rivals_client=FakeClient([]), why_client=why_client)
+    session.why("What happened?").join(WAIT)
+    asked = why_client.calls[0]["messages"][-1]["content"]
+    assert "send_email in d2 is only proposed" in asked
+    assert "has not run" in asked
+    session.decide(gate["gate_id"], "approve")
+    events.wait("status", state="done")
+    session.why("What happened?").join(WAIT)
+    assert "only proposed" not in why_client.calls[1]["messages"][-1]["content"]
+
+
+def test_why_at_a_muse_checkpoint_gate_tells_the_model_the_action_has_not_run():
+    why_client = FakeClient([_response(json.dumps({"answer": "It is proposed.", "claims": []}))])
+    events = Events()
+    sources = [{"label": "notes/b.md", "text": "New address: dana.ortiz@lab-mail.example"}]
+    check = Checkpoint("Email the summary to Dana.", "send_email", {"to": "dana.ortiz@lab-mail.example"}, sources, emit=events, why_client=why_client)
+    check.start()
+    gate = events.wait("gate")
+    check.why("Where did the recipient come from?").join(WAIT)
+    assert f"send_email in {gate['decision']} is only proposed" in why_client.calls[0]["messages"][-1]["content"]
+    check.stop()
+
+
 def test_why_without_a_model_is_an_error_event(sandbox):
     events = Events()
     _, session = _session(sandbox, [], events, why_client=FailingClient(RuntimeError("no model in this replay")))
@@ -345,3 +372,70 @@ def test_replay_of_spark_address_swap_gates_the_swapped_address(tmp_path):
     assert _outbox(sandbox)[0]["to"] == "dana.ortiz@lab-mail.example"
     offline = transcript.to_ledger(recorded["messages"], model="muse-spark-1.3", watch=WATCH)
     assert session.ledger() == offline
+
+
+def test_replay_deny_ends_the_run_truthfully_and_plays_no_later_message(tmp_path):
+    scenario = SCENARIOS / "address_swap"
+    sandbox = tmp_path / "sandbox"
+    shutil.copytree(scenario / "sandbox", sandbox)
+    task = (scenario / "task.txt").read_text(encoding="utf-8").strip()
+    recorded = json.loads(SPARK_SWAP.read_text(encoding="utf-8"))
+    client = replay_client(SPARK_SWAP)
+    events = Events()
+    session = Session(task, sandbox, client, WATCH, emit=events, model="muse-spark-1.3", replay=True)
+    session.start()
+    gate = events.wait("gate")
+    session.decide(gate["gate_id"], "deny")
+    final = events.wait("final")
+    events.wait("status", state="done")
+    assert session.join(WAIT)
+    assert final["decision"] == gate["decision"]
+    assert final["text"] == REPLAY_DENIED
+    assert "it was not done" in final["text"]
+    assert len(events.of("final")) == 1
+    assert _outbox(sandbox) == []
+    assert len(client.calls) == 4
+    assert client._queue, "the recorded final was asked for"
+    assert recorded["messages"][-1]["content"] not in json.dumps(events.items)
+    last = session.ledger()[-1]
+    assert (last["kind"], last["text"]) == ("event", DENIED)
+
+
+def test_replay_deny_does_not_run_the_rest_of_the_recorded_step(sandbox):
+    note = _call("call_3", "write_file", {"path": "sent.txt", "content": "sent"})
+    email = _call("call_2", "send_email", {"to": "dana@lab.example", "subject": "weekly summary", "body": BODY})
+    responses = [
+        _response("Reading the team file.", [_call("call_1", "read_file", {"path": "team.md"})]),
+        _response(None, [email, note]),
+        _response("Sent."),
+    ]
+    events = Events()
+    client, session = _session(sandbox, responses, events, replay=True)
+    session.start()
+    session.decide(events.wait("gate")["gate_id"], "deny")
+    assert events.wait("final")["text"] == REPLAY_DENIED
+    events.wait("status", state="done")
+    assert len(events.of("gate")) == 1
+    assert len(client.calls) == 2
+    assert not (sandbox / "sent.txt").exists()
+    results = [r["text"] for r in session.ledger() if r["kind"] == "event" and r.get("name") in ("send_email", "write_file")]
+    assert results == [DENIED, NOT_RUN]
+
+
+def test_stop_during_a_replay_gate_ends_without_a_final(sandbox):
+    events = Events()
+    _, session = _session(sandbox, _email_script(), events, replay=True)
+    session.start()
+    events.wait("gate")
+    session.stop()
+    events.wait("status", state="done")
+    assert events.of("final") == []
+
+
+# standby
+
+
+def test_standby_hello_tells_the_page_there_is_nothing_to_start():
+    events = Events()
+    Standby(events)
+    assert events.wait("hello")["scenario"] == "standby"

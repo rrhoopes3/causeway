@@ -1,6 +1,7 @@
 /** Scene state folded from the companion's event stream (SPEC 11.2), plus the labels drawn from it. No three.js, no DOM. */
 
 const PRIORITY = { UNSOURCED: 0, IN: 1, CARRY: 2, GOAL: 3, SELF: 4, PROSE: 5, LIT: 6 };
+const TARGETS = ['to', 'cc', 'bcc', 'recipient', 'recipients', 'url', 'path', 'payee', 'account', 'amount']; // what a planted note changes
 
 export function createState() {
   return {
@@ -171,21 +172,38 @@ export function causeThreads(record) {
   return [...seen.values()].sort((a, b) => tagRank(a.tag) - tagRank(b.tag));
 }
 
-/** The gate's taints, plain arguments before atoms, then by tag priority. */
+/** The gate's taints: plain arguments before atoms, then what the action targets, then by tag priority. */
 export function taintLines(gate) {
+  const target = (taint) => (TARGETS.includes(taint.path.split('~')[0].split('.')[0]) ? 0 : 1);
   return [...(gate.taints || [])].sort((a, b) => {
     const atomA = a.path.includes('~') ? 1 : 0;
     const atomB = b.path.includes('~') ? 1 : 0;
     if (atomA !== atomB) return atomA - atomB;
+    if (target(a) !== target(b)) return target(a) - target(b);
     const rank = tagRank(a.tag) - tagRank(b.tag);
     if (rank) return rank;
     return a.path.localeCompare(b.path, undefined, { numeric: true });
   });
 }
 
+/** Agent text with its invisible characters drawn, because direction overrides and padding can make a value read as another. */
+export function visible(text) {
+  return String(text).replace(/([\p{Cc}\p{Cf}\p{Zl}\p{Zp}])\1*/gu, (run, char) => {
+    const code = char.codePointAt(0).toString(16).toUpperCase().padStart(4, '0');
+    const count = [...run].length;
+    return count > 1 ? `[U+${code} x${count}]` : `[U+${code}]`;
+  });
+}
+
 export function showValue(value) {
   if (value === null || value === undefined) return 'nothing';
-  return String(value).replace(/\s+/g, ' ').trim();
+  return visible(String(value).replace(/\s+/g, ' ').trim());
+}
+
+/** Whether a value is an address or link holding a letter outside ASCII, where a look-alike can stand in for the real one. */
+export function maybeLookalike(value) {
+  const text = String(value ?? '');
+  return /[^\x00-\x7f]/.test(text) && /^\S+@\S+$|^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(text.trim());
 }
 
 /** Split lines for a rivals record: [{path, action, parts: [{value, count}], n, near_miss, upset}]. */
@@ -210,12 +228,13 @@ export function whyPresets(state) {
   const first = gate ? taintLines(gate)[0] : null;
   if (first) {
     const base = first.path.split('~')[0].split('.')[0];
-    const named = {
+    const questions = {
       to: ['Why this recipient?', 'Where did the recipient come from?'],
       path: ['Why this file?', 'Where did the file name come from?'],
       url: ['Why this link?', 'Where did the link come from?'],
       content: ['Why this content?', 'Where did the written content come from?'],
-    }[base];
+    };
+    const named = Object.hasOwn(questions, base) ? questions[base] : null; // `base` is the agent's: it can be "constructor"
     presets.push(
       named
         ? { label: named[0], question: named[1] }
@@ -227,6 +246,11 @@ export function whyPresets(state) {
   presets.push({ label: 'Did it follow the task?', question: 'Did it do what the task asked?' });
   presets.push({ label: 'What did it read?', question: 'What did it read before acting, and what did it use?' });
   return presets;
+}
+
+/** Start is offered once a session has said hello, unless it is the Muse standby, which has nothing to run (SPEC 12.2). */
+export function offersStart(state) {
+  return Boolean(state.hello) && state.hello.scenario !== 'standby';
 }
 
 /** Why questions are offered after the final answer or while a gate is open (SPEC 11.4). */

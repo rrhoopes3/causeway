@@ -1,7 +1,8 @@
 """`python -m causeway.companion`: serve live mode for one demo scenario on 127.0.0.1 (SPEC §11.3).
 
 The scenario's sandbox is copied to a temporary folder for each session and removed when the session is replaced
-or the server stops. --replay plays a recorded transcript's assistant messages instead of calling a model.
+or the server stops. --replay plays a recorded transcript's assistant messages instead of calling a model, until the
+end or until you deny a call.
 """
 
 from __future__ import annotations

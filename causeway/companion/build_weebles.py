@@ -3,8 +3,12 @@
 Hierarchy (names are the three.js API):
   Body
     ...parts
-    Mask   origin at the visor hinge; local +X rotation lifts it
+    InnerFace   the demon's head, seen through a hole in the shell once the mask is up
+    Mask        rises and tips back on local -X, so its face shows above the demon's; companion.js does this
 Character faces Blender -Y. Units metres. Height ~0.24 m.
+
+Run headless to rebuild companion.glb and the two stills:
+  blender --background --factory-startup --python causeway/companion/build_weebles.py
 """
 from __future__ import annotations
 
@@ -14,10 +18,39 @@ from pathlib import Path
 
 import bpy
 import bmesh
+import numpy as np
 from mathutils import Matrix, Vector
 
-MASK_TEX = str(Path(__file__).resolve().parent / "static" / "weebles_mask.jpg")
+STATIC = Path(__file__).resolve().parent / "static"
+MASK_TEX = str(STATIC / "weebles_mask.jpg")
 COL_NAME = "WeeblesChar"
+# same as the lift in companion.js, so the stills show what the page shows
+MASK_LIFT = -0.32
+MASK_RISE = 0.122
+PAGE_BG = "#0b0d11"
+HEAT_RAMP = (
+    (0.0, "#050102"),
+    (0.2, "#34060a"),
+    (0.45, "#b3190a"),
+    (0.68, "#ff5e12"),
+    (0.86, "#ffb838"),
+    (1.0, "#fff3cf"),
+)
+# right half of the face, x and z in metres from the head's axis; the left half is its mirror
+EYE = ((0.0048, 0.0), (0.0424, 0.0297), (0.0371, 0.0095), (0.0265, -0.0042), (0.0138, -0.0058))
+BROW = ((0.0, 0.0062), (0.0459, 0.0426), (0.0521, 0.0314), (0.0062, -0.0022))
+MOUTH = (
+    (0.0, -0.0062), (0.0168, -0.0095), (0.0336, -0.0067), (0.0482, 0.0034),
+    (0.0403, -0.0146), (0.028, -0.028), (0.0146, -0.0364), (0.0, -0.0398),
+)
+TEETH = (
+    ((0.0, -0.0067), (0.0123, -0.009), (0.0056, -0.028)),
+    ((0.0123, -0.009), (0.028, -0.0078), (0.0202, -0.0325)),
+    ((0.028, -0.0078), (0.0414, -0.0022), (0.0336, -0.0207)),
+    ((0.0, -0.0398), (0.0056, -0.0392), (0.0, -0.0235)),
+    ((0.0056, -0.0392), (0.0202, -0.0336), (0.0129, -0.0151)),
+    ((0.0202, -0.0336), (0.0347, -0.0224), (0.0274, -0.0118)),
+)
 
 
 def srgb(hex_color: str) -> tuple[float, float, float, float]:
@@ -27,6 +60,11 @@ def srgb(hex_color: str) -> tuple[float, float, float, float]:
     for c in rgb:
         out.append(c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4)
     return (*out, 1.0)
+
+
+def smoothstep(a, b, x):
+    t = max(0.0, min(1.0, (x - a) / (b - a)))
+    return t * t * (3 - 2 * t)
 
 
 def pbr(name, *, base="#808080", metallic=0.0, roughness=0.5, **kw):
@@ -221,6 +259,62 @@ def project_uv_from_y(me, radius):
             uv.data[li].uv = (u, v)
 
 
+def polygon_sdf(x, y, points):
+    """Distance from each (x, y) to a closed polygon, negative inside."""
+    pts = np.asarray(points)
+    dist = np.full(x.shape, np.inf)
+    inside = np.zeros(x.shape, dtype=bool)
+    for a, b in zip(pts, np.roll(pts, -1, axis=0)):
+        ex, ey = b - a
+        wx, wy = x - a[0], y - a[1]
+        t = np.clip((wx * ex + wy * ey) / (ex * ex + ey * ey), 0, 1)
+        dist = np.minimum(dist, np.hypot(wx - t * ex, wy - t * ey))
+        if ey:
+            inside ^= ((a[1] > y) != (b[1] > y)) & (wx < wy * ex / ey)
+    return np.where(inside, -dist, dist)
+
+
+def face_image(span: float, size: int = 384) -> str:
+    """Paint the demon's face as heat, colour it through HEAT_RAMP, save a JPEG for the emissive map. span = half width in metres."""
+    pixel = 2 * span / size
+    axis = (np.arange(size) + 0.5) * pixel - span
+    z, x = np.meshgrid(axis, axis, indexing="ij")
+    side = np.abs(x)
+
+    def solid(sdf):
+        return np.clip(0.5 - sdf / pixel, 0, 1)
+
+    eye = polygon_sdf(side, z, EYE)
+    brow = polygon_sdf(side, z, BROW)
+    mouth = polygon_sdf(side, z, MOUTH)
+    teeth = np.min([polygon_sdf(side, z, t) for t in TEETH], axis=0)
+    pupil = np.hypot((side - 0.0244) / 0.0016, (z - 0.0085) / 0.0085) - 1
+
+    # soft red bleeding out onto the dark head
+    heat = np.maximum(0.3 * np.exp(-np.maximum(brow, 0) / 0.006), 0.28 * np.exp(-np.maximum(mouth, 0) / 0.006))
+    heat = np.maximum(heat, 0.5 * np.exp(-np.maximum(eye, 0) / 0.0035))
+    # the mouth burns low behind the teeth, brighter along its centre line
+    throat = 0.42 + 0.18 * np.clip(-mouth / 0.012, 0, 1)
+    heat = heat + (throat - heat) * solid(mouth)
+    heat = heat + ((0.9 + 0.1 * np.clip(-teeth / 0.004, 0, 1)) - heat) * solid(teeth)
+    # eyes run white hot at the core, with a black slit
+    fire = 0.76 + 0.24 * np.clip(-eye / 0.005, 0, 1)
+    heat = heat + (fire - heat) * solid(eye)
+    heat = heat * (1 - np.clip(0.5 - pupil * 2, 0, 1) * solid(eye))
+
+    stops = [s for s, _ in HEAT_RAMP]
+    rgb = [np.interp(heat, stops, [int(c.lstrip("#")[i : i + 2], 16) / 255 for _, c in HEAT_RAMP]) for i in (0, 2, 4)]
+    rgba = np.dstack((*rgb, np.ones_like(heat)))
+
+    img = bpy.data.images.new("WeeblesFace", size, size)
+    img.pixels.foreach_set(rgba.astype(np.float32).ravel())
+    img.file_format = "JPEG"
+    out = str(Path(bpy.app.tempdir) / "weebles_face.jpg")
+    img.save(filepath=out, quality=85)
+    bpy.data.images.remove(img)
+    return out
+
+
 def shade_smooth(obj):
     mesh = obj.data
     mesh.shade_smooth()
@@ -315,13 +409,8 @@ def build():
         emission="#ff7a2e",
         emission_strength=6.0,
     )
-    mat_inner = pbr(
-        "WeeblesInner",
-        base="#120810",
-        roughness=0.55,
-        emission="#ff6a22",
-        emission_strength=1.8,
-    )
+    mat_inner = pbr("WeeblesInner", base="#050304", roughness=0.85, specular=0.1, emission_strength=1.0)
+    mat_hood = pbr("WeeblesHood", base="#050304", roughness=0.9, specular=0.1)
     mat_floor = pbr("WeeblesFloor", base="#0b0d11", roughness=0.85)
 
     # --- Body (named Body): round dumpling, centre at origin of the object ---
@@ -329,14 +418,33 @@ def build():
     body_bm = ico(BODY_R, subdivisions=4, scale=(1.06, 0.98, 1.08))
     for v in body_bm.verts:
         # squash a little sitting-belly, keep the front ( -Y ) full so the visor can wrap it
-        if v.co.z < -0.02:
-            v.co.x *= 0.92
-            v.co.y *= 0.95
-        if v.co.z > 0.03:
-            v.co *= 0.97
+        # (blended, not stepped: a step would show as kinks in the edge of the face hole)
+        belly = smoothstep(0.0, -0.04, v.co.z)
+        v.co.x *= 1 - 0.08 * belly
+        v.co.y *= 1 - 0.05 * belly
+        v.co *= 1 - 0.03 * smoothstep(0.01, 0.05, v.co.z)
+    # open the shell behind the visor, a little inside its rim, so the visor hides the hole when down
+    bmesh.ops.bisect_plane(
+        body_bm,
+        geom=list(body_bm.verts) + list(body_bm.edges) + list(body_bm.faces),
+        dist=1e-5,
+        plane_co=Vector((0.0, -0.0575, 0.004)),
+        plane_no=Vector((0.0, -0.999, 0.042)),
+        clear_outer=True,
+        clear_inner=False,
+    )
+    # turn the cut edge inward so it reads as a thick hood, not a paper edge, and seals against the head
+    lip = bmesh.ops.extrude_edge_only(body_bm, edges=[e for e in body_bm.edges if e.is_boundary])
+    for elem in lip["geom"]:
+        if isinstance(elem, bmesh.types.BMVert):
+            elem.co.y += 0.03
+        elif isinstance(elem, bmesh.types.BMFace):
+            elem.material_index = 1
+    bmesh.ops.recalc_face_normals(body_bm, faces=body_bm.faces)
     body_me = mesh_from_bm("Body", body_bm)
     body = new_obj("Body", body_me, col, loc=(0, 0, 0.096))
     body.data.materials.append(mat_body)
+    body.data.materials.append(mat_hood)
     shade_smooth(body)
     subsurf(body, 1)
 
@@ -409,19 +517,26 @@ def build():
     spade.data.materials.append(mat_horn)
     shade_smooth(spade)
 
-    # inner ember face, recessed so it cannot z-fight the visor when the mask is down
-    inner_r = BODY_R * 0.78
-    ibm = spherical_cap(inner_r, math.radians(50), segs_u=32, segs_v=12)
-    inner = new_obj("InnerFace", mesh_from_bm("InnerFace", ibm), col, parent=body, loc=(0, 0.012, 0.01))
+    # the demon: a dark head filling the hole, its face painted in the emissive map, well clear of the visor
+    inner_r = 0.072
+    inner_ang = math.radians(80)
+    ibm = spherical_cap(inner_r, inner_ang, segs_u=32, segs_v=16)
+    inner_me = mesh_from_bm("InnerFace", ibm)
+    face_span = inner_r * math.sin(inner_ang)
+    project_uv_from_y(inner_me, face_span)
+    add_image(mat_inner, face_image(face_span), socket="Emission Color")
+    inner = new_obj("InnerFace", inner_me, col, parent=body, loc=(0, 0.01, 0.004))
     inner.data.materials.append(mat_inner)
     shade_smooth(inner)
 
     # --- Mask: visor on the front of the dumpling, dark body reads as a hood ---
-    mask_r = BODY_R * 1.012
+    # stands proud of the shell all the way round to its rim, so the shell cannot poke through it
+    mask_r = BODY_R * 1.04
     cap_ang = math.radians(48)
     mbm = spherical_cap(mask_r, cap_ang, segs_u=72, segs_v=32)
     mask_me = mesh_from_bm("MaskMesh", mbm)
-    project_uv_from_y(mask_me, mask_r * math.sin(cap_ang) * 0.78)
+    # the art fills the visor out to its rim; any tighter and the texture repeats around the edge
+    project_uv_from_y(mask_me, mask_r * math.sin(cap_ang))
     mask_mesh = new_obj("MaskFront", mask_me, col, loc=(0, 0, 0))
     mask_mesh.data.materials.append(mat_mask)
     shade_smooth(mask_mesh)
@@ -450,7 +565,7 @@ def build():
     shade_smooth(glow)
 
     # concentric with Body: Body origin is the dumpling centre
-    mask_loc = Vector(body.location) + Vector((0.0, 0.0, 0.006))
+    mask_loc = Vector(body.location) + Vector((0.0, 0.0, 0.002))
     for o in (mask_mesh, mask_back, rim, glow):
         o.location = Vector(o.location) + mask_loc
 
@@ -581,10 +696,52 @@ def export_glb(path: Path | None = None) -> Path:
     return out
 
 
+def render_stills(folder: Path = STATIC, size: int = 512) -> None:
+    """Render the phone page's fallback images: mask down and lifted, same framing, on the page's background."""
+    sc = bpy.context.scene
+    sc.render.engine = "CYCLES"
+    sc.cycles.samples = 64
+    sc.cycles.use_denoising = True
+    sc.render.resolution_x = sc.render.resolution_y = size
+    sc.render.resolution_percentage = 100
+    sc.render.image_settings.file_format = "JPEG"
+    sc.render.image_settings.quality = 90
+    sc.view_settings.view_transform = "Standard"
+    sc.view_settings.look = "None"
+    sc.world = bpy.data.worlds.get("WeeblesWorld") or bpy.data.worlds.new("WeeblesWorld")
+    sc.world.use_nodes = True
+    bg = next(n for n in sc.world.node_tree.nodes if n.type == "BACKGROUND")
+    bg.inputs["Color"].default_value = srgb(PAGE_BG)
+    bg.inputs["Strength"].default_value = 1.0
+    # only the character and its key and rim, dimmed from the look-dev levels for this view transform:
+    # no look-dev floor, no default cube from a fresh scene, and the face itself is the ember
+    keep = {*bpy.data.collections[COL_NAME].objects, *(bpy.data.objects[n] for n in ("WeeblesKey", "WeeblesRim"))}
+    for o in sc.objects:
+        o.hide_render = o not in keep
+    bpy.data.objects["WeeblesKey"].data.energy = 3
+    bpy.data.objects["WeeblesRim"].data.energy = 6
+    # a little to one side, framed to hold the risen mask above him
+    cam = sc.camera
+    cam.data.lens = 88
+    cam.location = (-0.2, -0.88, 0.2)
+    cam.rotation_euler = (Vector((0.0, 0.0, 0.155)) - Vector(cam.location)).to_track_quat("-Z", "Y").to_euler()
+    mask = bpy.data.objects["Mask"]
+    home = mask.location.z
+    for name, lift, rise in (("weebles_idle.jpg", 0.0, 0.0), ("weebles_open.jpg", MASK_LIFT, MASK_RISE)):
+        mask.rotation_euler.x = lift
+        mask.location.z = home + rise
+        sc.render.filepath = str(Path(folder) / name)
+        bpy.ops.render.render(write_still=True)
+        print("still", sc.render.filepath, Path(sc.render.filepath).stat().st_size)
+    mask.rotation_euler.x = 0.0
+    mask.location.z = home
+
+
 if __name__ == "__main__":
     try:
         build()
         export_glb()
+        render_stills()
         print("OK")
     except Exception:
         print(traceback.format_exc())

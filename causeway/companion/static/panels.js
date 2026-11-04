@@ -234,7 +234,7 @@ export class GatePanel {
       y += 58;
       ctx.font = font(46, 700, MONO);
       ctx.fillStyle = INK;
-      if (!measuring) ctx.fillText(fit(ctx, gate.call.name, buttonsLeft - pad - 16), pad, y);
+      if (!measuring) ctx.fillText(fit(ctx, showValue(gate.call.name), buttonsLeft - pad - 16), pad, y);
       y += 22;
       const leaves = flatten(gate.call.args);
       const keyW = Math.min(170, Math.max(...leaves.map(([k]) => (ctx.font = font(30, 400, MONO), ctx.measureText(k).width)), 60) + 24);
@@ -243,7 +243,7 @@ export class GatePanel {
         if (measuring) continue;
         ctx.font = font(30, 400, MONO);
         ctx.fillStyle = MUTED;
-        ctx.fillText(fit(ctx, path, keyW - 16), pad, y);
+        ctx.fillText(fit(ctx, showValue(path), keyW - 16), pad, y);
         ctx.font = font(32, 400, SANS);
         ctx.fillStyle = INK;
         ctx.fillText(fit(ctx, showValue(value), W - pad * 2 - keyW), pad + keyW, y);
@@ -259,7 +259,7 @@ export class GatePanel {
         ctx.font = font(28, 400, SANS);
         ctx.fillStyle = FAINT;
         ctx.textAlign = 'right';
-        ctx.fillText(`${taints.length} not from the task`, W - pad, y);
+        ctx.fillText(`${taints.length} to check`, W - pad, y);
         ctx.textAlign = 'left';
       }
       for (const taint of taints) {
@@ -374,6 +374,8 @@ export class GatePanel {
 export class WhyBoard {
   constructor() {
     this.sheet = new Sheet(0.62, 1024);
+    // Tall boards tilt back past the threads. Threads write no depth, so drawing the board after them keeps its text clear.
+    this.sheet.mesh.renderOrder = 1;
     this.group = new THREE.Group();
     this.group.add(this.sheet.group);
     this.why = null;

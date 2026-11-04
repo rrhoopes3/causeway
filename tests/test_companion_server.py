@@ -14,7 +14,7 @@ import pytest
 
 import causeway.companion.__main__ as companion_main
 from causeway.client import FakeClient
-from causeway.companion.server import Companion, resolve_static
+from causeway.companion.server import Companion, for_browser, resolve_static
 from causeway.companion.session import Session
 from causeway.demo.__main__ import SCENARIOS
 
@@ -627,3 +627,8 @@ def test_sessions_retire_removes_the_sandbox_copy(monkeypatch, tmp_path):
             break
         gone.wait(0.02)
     assert gone.is_set()
+
+
+def test_a_number_a_browser_would_change_goes_to_the_page_as_text():
+    event = {"args": {"account": 2**53, "n": [2**53 - 1, -(2**53)], "big": float("inf"), "flag": True, "rate": 0.5}}
+    assert for_browser(event) == {"args": {"account": str(2**53), "n": [2**53 - 1, str(-(2**53))], "big": "inf", "flag": True, "rate": 0.5}}

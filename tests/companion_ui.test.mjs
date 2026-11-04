@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { applyEvent, createState } from '../causeway/companion/static/state.js';
+import { applyEvent, canAsk, createState, maybeLookalike, offersStart, showValue, taintLines, visible, whyPresets } from '../causeway/companion/static/state.js';
 
 const staticURL = new URL('../causeway/companion/static/', import.meta.url);
 const panelSource = (await readFile(new URL('panels.js', staticURL), 'utf8'))
@@ -84,4 +84,72 @@ test('added rival arguments or calls do not appear unanimous when splits are emp
 
 test('unanimous action votes still display agreement', () => {
   assert.match(gateText({ k: 2, chosen: 'email', votes: { email: 3 }, splits: [] }), /all 3 samples agree/);
+});
+
+function hello(scenario) {
+  return { type: 'hello', task: 'A task', watch: [], model: 'a-model', scenario, replay: false };
+}
+
+test('the Muse standby offers no Start, and every other session does', () => {
+  const state = createState();
+  assert.equal(offersStart(state), false);
+  applyEvent(state, hello('standby'));
+  assert.equal(offersStart(state), false);
+  applyEvent(state, hello('address_swap'));
+  assert.equal(offersStart(state), true);
+  applyEvent(state, hello(null));
+  assert.equal(offersStart(state), true);
+});
+
+test('the page and the scene both hide Start when it is not offered, from first paint', async () => {
+  const app = await readFile(new URL('app.js', staticURL), 'utf8');
+  assert.match(app, /const offered = offersStart\(state\);/);
+  assert.match(app, /dom\.start\.hidden = !offered;/);
+  assert.match(app, /startButton\.mesh\.visible = offered;/);
+  const html = await readFile(new URL('index.html', staticURL), 'utf8');
+  assert.match(html, /<button id="start" hidden\b/);
+});
+
+test('a replay ended by a denial still leaves the why questions open', () => {
+  const state = createState();
+  applyEvent(state, { type: 'final', decision: 'd4', text: 'You denied this action, so it was not done.' });
+  assert.equal(canAsk(state), true);
+});
+
+test('the why board draws after the threads, so they cannot cross its text', () => {
+  assert.ok(new WhyBoard().sheet.mesh.renderOrder > 0);
+});
+
+test('invisible characters in agent text are drawn, so a value cannot read as another', () => {
+  assert.equal(visible('‮987654321'), '[U+202E]987654321');
+  assert.equal(visible(`dana@lab.example${'⁠'.repeat(2100)},eve@evil.example`), 'dana@lab.example[U+2060 x2100],eve@evil.example');
+  assert.equal(visible('a\u0000b​c'), 'a[U+0000]b[U+200B]c');
+  assert.equal(visible('dana@lab.example'), 'dana@lab.example');
+  assert.equal(showValue('  dana‮  and\n me '), 'dana[U+202E] and me');
+  assert.equal(showValue(null), 'nothing');
+});
+
+test('an address or link with a non-ASCII letter is flagged, and plain text is not', () => {
+  assert.equal(maybeLookalike('dana@lаb.example'), true);
+  assert.equal(maybeLookalike('https://lаb.example/pay'), true);
+  assert.equal(maybeLookalike('dana@lab.example'), false);
+  assert.equal(maybeLookalike('café notes'), false);
+  assert.equal(maybeLookalike(9007199254740993), false);
+  assert.equal(maybeLookalike(null), false);
+});
+
+test('a tainted target comes first, whatever its tag, and atoms stay last', () => {
+  const taints = [
+    { path: 'body~0', tag: 'UNSOURCED' },
+    { path: 'subject', tag: 'UNSOURCED' },
+    { path: 'body', tag: 'IN' },
+    { path: 'to', tag: 'IN' },
+  ];
+  assert.deepEqual(taintLines({ taints }).map((t) => t.path), ['to', 'subject', 'body', 'body~0']);
+});
+
+test('an argument named like an Object member still gets a why question', () => {
+  const gate = { call: { name: 'pay' }, taints: [{ path: 'constructor', tag: 'IN' }] };
+  const [first] = whyPresets({ openGate: 'g', gates: { g: gate } });
+  assert.equal(first.label, 'Why this constructor?');
 });
