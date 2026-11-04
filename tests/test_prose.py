@@ -51,6 +51,7 @@ def test_prose_rule_is_eight_words_or_a_newline():
     assert not is_prose("Please send it now")
     assert is_prose("Please send the quarterly report to finance by noon today")
     assert is_prose("line one\nline two")
+    assert not is_prose("Mallory\n")  # a copied file line: its newline ends it, and it must not escape the taint check
 
 
 def test_prose_ranks_between_self_and_lit():

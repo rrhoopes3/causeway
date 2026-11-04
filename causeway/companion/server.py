@@ -7,6 +7,7 @@ kept so a new stream replays them before the live ones.
 from __future__ import annotations
 
 import json
+import math
 import queue
 import sys
 import threading
@@ -24,6 +25,7 @@ HOST = "127.0.0.1"
 DEFAULT_PORT = 8770
 PING_SECONDS = 15.0
 MAX_BODY = 1_000_000
+MAX_SAFE_INTEGER = 2**53 - 1
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -100,6 +102,20 @@ class Hub:
         with self._lock:
             for stream in self._streams:
                 stream.put(None)
+
+
+def for_browser(value: Any) -> Any:
+    """`value` as JSON a browser reads back unchanged: a number JSON.parse would round or refuse goes as text, so a page
+    never draws an account other than the one in the action."""
+    if isinstance(value, dict):
+        return {key: for_browser(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [for_browser(child) for child in value]
+    if isinstance(value, int) and not isinstance(value, bool) and abs(value) > MAX_SAFE_INTEGER:
+        return str(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    return value
 
 
 class LoopbackServer(ThreadingHTTPServer):
@@ -206,7 +222,8 @@ class Companion:
 
     def adopt(self, make: Callable[[Emit], Session]) -> Session:
         """Replace the session with make(emit), as /reset does, and start it. For runs that come from outside, such
-        as a Muse checkpoint (§12): an open gate of the replaced session is denied."""
+        as a Muse checkpoint (§12). The replaced session's stop() decides what becomes of its open gate: a Checkpoint's
+        ends as superseded, because the user did not deny it."""
         with self._lock:
             old = self.session
             old.stop()
@@ -431,4 +448,4 @@ class Handler(BaseHTTPRequestHandler):
             self.app.hub.unsubscribe(stream)
 
     def _frame(self, event: dict[str, Any]) -> None:
-        self.wfile.write(b"data: " + json.dumps(event, ensure_ascii=False).encode("utf-8") + b"\n\n")
+        self.wfile.write(b"data: " + json.dumps(for_browser(event), ensure_ascii=False).encode("utf-8") + b"\n\n")

@@ -2,6 +2,8 @@
 
 **See why your agent acted.** Causeway turns any tool-using agent's transcript into a ledger where every decision carries a mechanical cause tag. Ask "why did it do that at step 7?", and Muse Spark answers by citing ledger records. A verifier then checks every citation against the record it names and strikes any claim it can't back.
 
+**For Meta's Muse, the same tagging runs as a checkpoint** (§12). Muse's transcript is out of reach in Meta's cloud, so Muse is asked to report what it read and what it is about to do. Each value is tagged, and when one did not come from the user, the user decides on their phone.
+
 Entry for the Meta Global AI Developer Hackathon (Oct 26 – Nov 4, 2026), indie track, theme "Push the Frontier" (a better way to understand and control a machine).
 
 ## 1. Why this exists
@@ -14,13 +16,14 @@ Causeway answers it mechanically where it can and with a checked model where it 
 - **Rivals (sampled).** Re-ask the model at a step *k* times and count what else it would have done. A step it won by one vote is a near miss.
 - **Explanations (Muse Spark, quote-checked).** The whole ledger goes into Spark's 1M-token context. Spark must answer in a fixed JSON schema in which every claim cites record ids with verbatim quotes. The verifier checks that each quote is in the cited record. Claims whose quotes are missing are struck, not shown as fact. A found quote shows the record says it, not that the claim follows (§7.3).
 
-The idea comes from ConshusBot, a private research loop that tags every workspace ignition with its cause (`IN`, `CARRY·k`, `ECHO`). No ConshusBot code is used here. Everything in this repo was written during the hackathon.
+The idea comes from ConshusBot, a private research loop that tags every workspace ignition with its cause (`IN`, `CARRY·k`, `ECHO`). No ConshusBot code is used here. All code in this repo was written during the hackathon, with AI coding agents, except vendored three.js (MIT). The mask texture was generated with Grok Imagine from the author's character design.
 
 ## 2. Hackathon constraints (from the participant guide)
 
-- Repo public. New work only: everything here was built from Oct 26, 2026. The README says so plainly.
+- Repo public. New work only: the first commit is Oct 26, 2026, 15:50 ET, after kickoff. The README states the two exceptions plainly: vendored three.js and the Grok Imagine mask texture.
 - Must use Meta models: Muse Spark via Meta Model API (explainer, rivals, demo agent); Muse Glimmer open weights on a local RTX 3090 (alternative explainer, for the open-weights bonus); SAM 3.1 (a tool in the demo agent). Voice input was cut early (see §9, cut order) and is not claimed.
-- 3-minute demo video showing only hackathon-built features.
+- Muse, Meta's agent, is the agent the **Muse checkpoint** (§12) is built to check, added as a custom connector. The checkpoint itself calls no model; only its Why button does. Muse Code with Muse Wonder worked on the first companion (commit bbe91e6), whose 3D model was later replaced.
+- 3-minute demo video showing only hackathon-built features, with Meta's Muse app labelled as Meta's.
 - Rubric: Impact 30, Use of Meta AI 25, Demo 25, Technical depth 20.
 
 ## 3. Meta Model API facts this code relies on (checked 2026-10-26)
@@ -140,7 +143,7 @@ The basename has to be found in a record that still counts under §5.2. A basena
 
 Long composed strings like an email body, file content or a summary are not copied from anywhere, so whole-string matching calls them `UNSOURCED`, which is wrong. The parts of them that matter, such as an address, a link or an account number, are exactly what whole-string matching can't see.
 
-A string leaf is **prose** if it has 8 or more whitespace-separated words, or contains a newline. A file of four coordinate lines is prose. A prose leaf:
+A string leaf is **prose** if it has 8 or more whitespace-separated words, or has a newline inside it. A newline at the very end does not count, so a copied file line stays an ordinary value. A file of four coordinate lines is prose. A prose leaf:
 
 1. Gets tag `PROSE`. Its cause entry carries `"sources"`: up to 3 prior records whose **coverage** is at least 0.2, highest first, then most recent first. Coverage is the fraction of the prose's distinct tokens found in the record's search texts, after casefolding. Tokens are words of 4 or more letters and numbers of 2 or more digits. The single-valued `source` is the first of those, or null. `PROSE` ranks between `SELF` and `LIT`, and it is never a taint.
 2. Is scanned for **atoms**, each traced like an ordinary leaf (§5.2–5.3, no fuzzy level). Its cause path is `<leaf path>~<n>`, where n is the atom's 0-based index within the leaf. Atoms count toward the decision tag and are taints under watch like any leaf. Atom kinds, in this order, without overlaps:
@@ -256,15 +259,17 @@ A claim is **supported** if it has at least one cite, all its cites pass, and it
 | 7 | Viewer: web page plus WebXR lattice of the ledger on Quest | yes | Recorded walk-through for the video |
 | 8 | Video, README, submission | — | Submitted before Nov 4, 9 PM ET |
 | 9 | Companion: live mode with gates (§11), replacing 5 and 7's lattice | yes | The address swap plays live through the companion: the mask lifts at `send_email`, and Deny stops the email. The Quest/WebXR scene is an optional presentation of the same gate, not a requirement |
+| 10 | Muse checkpoint over MCP (§12) and the owner's phone page (§12.3) | no | A tainted checkpoint from a real MCP client is decided on the phone page. A real Muse app on a real phone is the owner's phone test |
 
 Cut order if time runs short: 7's voice, then 7's WebXR (keep the 2D web view), then 6.
 
 ## 10. Testing
 
-- `py -3.12 -m pytest` runs offline and must pass before every commit. GitHub Actions runs `pytest -m "not live"` on each push and pull request (`.github/workflows/test.yml`), installing the pinned versions in `requirements-dev.lock`.
+- `py -3.12 -m pytest` runs offline and must pass before every commit. GitHub Actions runs `pytest -m "not live"` on each push and pull request (`.github/workflows/test.yml`), installing the pinned versions in `requirements-dev.lock` and then the `muse` extra, so the Muse, phone and rehearsal tests run there. Without that extra they skip.
 - Live tests are marked `@pytest.mark.live` and skipped unless a key is available.
 - Fixtures live in `tests/fixtures/*.json`, as hand-written OpenAI-format transcripts. Each fixture names the tags it expects.
 - `node --test tests/companion_ui.test.mjs` runs the companion's state and panel regressions with Node 24 and a recording canvas; GitHub Actions runs it alongside the Python suite.
+- `tests/test_errands.py` pins the errand counts in `examples/errands.md` (§12.4), so a change to the tagger that moves a number fails a test.
 
 ## 11. Live mode: the companion (`causeway.companion`)
 
@@ -275,10 +280,10 @@ A Muse-style personal agent runs live, and Causeway keeps it honest while it wor
 `Session(task, sandbox, client, watch, rivals_k=0, tools=demo ALL, emit=callback)` runs the demo agent loop (`causeway.demo.agent`, same system prompt, `reasoning_effort="low"`, `max_steps` 12) with these differences:
 
 - After every model response, the ledger is rebuilt with `transcript.to_ledger(messages, watch=watch)`. Each record not emitted before is emitted once as a `record` event. Tags of a record depend only on earlier records, so a record never changes after it is emitted.
-- The calls of one assistant message run in order. A call to a watched tool whose decision has `watch` entries for that action index is **gated**: the session emits `gate` and blocks until `decide(gate_id, verdict)`. On `approve` the tool runs. On `deny` it does not run, and the tool result is `denied: the user declined this action`. Ungated calls run at once.
+- The calls of one assistant message run in order. A call to a watched tool whose decision has `watch` entries for that action index is **gated**: the session emits `gate` and blocks until `decide(gate_id, verdict)`. On `approve` the tool runs. On `deny` it does not run, and the tool result is `denied: the user declined this action. It was not done. Do not retry it or try another way. Reply to the user now and say plainly that it was not done.` Ungated calls run at once.
 - With `rivals_k > 0`, a gate starts `rivals.rivals(...)` for that decision in a background thread and emits `rivals` when it returns. The gate does not wait for it.
-- `why(question)` runs `explain.why` over the current ledger and emits `why`. It may run while a gate is open.
-- `stop()` ends the run: an open gate is denied and the loop exits after the current step.
+- `why(question)` runs `explain.why` over the current ledger and emits `why`. It may run while a gate is open. Then the model is told that the gate's action (for example `send_email in d4`) is only proposed and has not run, to say so in `answer`, and to keep it out of `claims`. This covers live, replay and Muse checkpoint gates.
+- `stop()` ends the run: an open gate is denied and the loop exits after the current step. A Muse checkpoint differs: its open gate ends as `superseded` (§12.1).
 - One run per session. Starting a second while one runs is an error.
 
 ### 11.2 Events
@@ -287,13 +292,13 @@ Every event is a JSON object with `seq` (0, 1, 2, … per session) and `type`:
 
 | type | fields |
 |---|---|
-| `hello` | `task`, `watch` (list), `model`, `scenario` (name or null), `replay` (bool) |
+| `hello` | `task`, `watch` (list), `model`, `scenario` (name or null; `"standby"` with model `"muse"` for the Muse standby, §12.2), `replay` (bool) |
 | `status` | `state`: `idle`, `running`, `waiting` (a gate is open), `done`, `error` |
 | `record` | `record` (ledger record as tagged), `origin` (label from `cli.origins` for tool events, `"the task"` for goal events, else null) |
 | `gate` | `gate_id` (opaque string with a random session prefix, unique across runs and restarts), `decision` (id), `action` (index), `call` (`{name, args}`), `taints` (the decision's `watch` entries for this action, each plus `value` and `label`, where label is the source's origin, or `"nowhere in the run"` when source is null) |
 | `rivals` | `decision`, `rivals` (§6.4 record) |
-| `resolved` | `gate_id`, `verdict` (`approve` or `deny`) |
-| `final` | `decision`, `text` |
+| `resolved` | `gate_id`, `verdict` (`approve` or `deny`). A superseded Muse gate sends none: the next session's `hello` resets the page |
+| `final` | `decision`, `text`. After a replay deny, `decision` is the denied one and `text` is Causeway's own (§11.3), which adds no ledger record |
 | `why` | `question`, `result` (`explain.why` result plus `model`) |
 | `error` | `message` (never contains the API key); failed why requests also include `operation: "why"` and `question`, so the matching pending question can be cleared |
 
@@ -310,47 +315,126 @@ Every event is a JSON object with `seq` (0, 1, 2, … per session) and `type`:
 - `POST /why` `{"question"}` returns 202 at once; the answer arrives as a `why` event.
 - `POST /reset` stops any run and starts a fresh session (new seq from 0, events cleared; connected streams get a `hello`).
 - `GET /ledger` returns the current ledger as JSON.
-- `--replay TRANSCRIPT.json` replaces the model with the transcript's own assistant messages in order (a `FakeClient`), so a recorded run can be shown with no key and no network. Tools still run in the scenario sandbox. `--pace` (default 1.5 s in replay, 0 otherwise) waits before each model response, so the replay plays at reading speed. Rivals and `why` still need a model; in replay they use `--base-url`/`--model` when a key is available and emit `error` otherwise.
+- `--replay TRANSCRIPT.json` replaces the model with the transcript's own assistant messages in order (a `FakeClient`), so a recorded run can be shown with no key and no network. Tools still run in the scenario sandbox. `--pace` (default 1.5 s in replay, 0 otherwise) waits before each model response, so the replay plays at reading speed. Rivals and `why` still need a model; in replay they use `--base-url`/`--model` when a key is available and emit `error` otherwise. A denied call ends a replay, because the recording was written as if every call ran. The call's result is the denied text (§11.1). Later calls in the same recorded message get no gate, and their result is `not run: the user denied an earlier call in this step, so the replay ended`. No later recorded message plays, and `final` reads `You denied this action, so it was not done. This recorded run stops here.` The ledger ends at the tool result, and `why` stays available. Approve plays to the end. `stop()` during a replay gate ends with no `final`.
 - `--quest` runs `adb reverse tcp:PORT tcp:PORT` and opens `http://localhost:PORT/` in the Quest browser (`com.oculus.browser`). The page is then a secure context, which WebXR requires, and nothing listens on the network.
 
 ### 11.4 Scene (`static/`)
 
 One page, three.js vendored under `static/vendor/three/` (no CDN, works offline), loaded with an import map.
 
-- **Companion** at about 1 m in front of the user, a little below eye level. `static/companion.glb`, when present, must have nodes named `Body` and `Mask`, and the mask lifts by rotating `Mask` about its own origin. Without the file, a procedural stand-in is drawn: a dark horned body and a pale round mask with a cute face.
+- **Companion** at about 1 m in front of the user, a little below eye level. `static/companion.glb`, when present, must have nodes named `Body` and `Mask`, and the mask lifts by rising and tipping back a little from its place, so its face still shows above the one it was hiding. A node named `InnerFace`, when present, is a dark head seen through a hole in the body. Its face is an emissive map that ignites and flickers as the mask lifts, so the demon's face shows only on a gate. With the mask down, the face's glow and the ember light are off. Without the file, a procedural stand-in is drawn: a dark horned body and a pale round mask with a cute face. `blender --background --factory-startup --python causeway/companion/build_weebles.py` rebuilds the model and the two stills the phone page falls back on. The mask texture is `weebles_mask.jpg`, generated with Grok Imagine (§2).
 - **Records as cards.** Events (what the agent read) stack in an arc on the left, decisions on the right, newest nearest. Each card shows id, a short label (origin or action) and the tag, colored as in the viewer: IN `#d4a24c`, CARRY `#e9953a`, GOAL `#8fb3d9`, SELF `#a78bfa`, UNSOURCED `#ef5b5b`, PROSE `#9aa3af`, LIT `#4d5560`.
 - **Threads** run from each decision card to the cards of its cause sources, in the tag's color. An `UNSOURCED` cause ends in an open, dangling thread.
 - **Gate.** On `gate`, the mask lifts and a panel appears in front of the companion: the call, one line per taint (`to = dana.ortiz@lab-mail.example ← read_file(notes/b.md) [IN]`), then rivals splits when they arrive (`he'd send to: dana.ortiz@… 3 · dana@lab.example 2`), and **Approve** and **Deny** buttons. On `resolved`, the panel closes and the mask settles.
-- **Why.** After `final`, or while a gate is open, preset question buttons (for example "Why this recipient?") post to `/why`. The answer panel lists claims with quotes found and their cited ids, unproven claims with their warnings, and struck claims struck through. The count includes all three groups. A failed why request clears the pending question so the user can retry.
+- **Why.** After `final`, or while a gate is open, preset question buttons (for example "Why this recipient?") post to `/why`. The answer panel lists claims with quotes found and their cited ids, unproven claims with their warnings, and struck claims struck through. The count includes all three groups. A failed why request clears the pending question so the user can retry. The answer board draws over the threads, so no thread crosses its text.
 - **Rival agreement.** An empty per-argument split list is not evidence of unanimity: rivals can add arguments or calls. The gate panel uses the action votes to report agreement and flags other differences when no split lines describe them.
 - **Input.** Controllers or hands select by ray (WebXR `select`). On desktop the same scene renders in a normal canvas, with mouse drag to look and click to select, so it can be developed and tested without a headset. An **Enter XR** button uses `immersive-ar` (passthrough) when supported, else `immersive-vr`.
-- A **Start** button posts `/start`. The page reconnects to `/events` after a drop and rebuilds the scene from the replayed events.
+- A **Start** button posts `/start`. It is hidden before the first `hello` and on the Muse standby, where only Reset is offered. It reads `Running` (disabled) during a run, including a Muse checkpoint gate, and `New run` once the run is finished. The page reconnects to `/events` after a drop and rebuilds the scene from the replayed events.
+- **Caption.** The scene caption names the scenario and the model, or `scenario · replay` in a replay.
 
-## 12. Muse checkpoint: Causeway as a custom MCP server (`causeway.companion.muse`)
+## 12. Muse checkpoint: Causeway as a custom connector (`causeway.companion.muse`)
 
-Meta's Muse agent accepts custom MCP servers: the user gives Muse a URL, and Muse asks for a key when the server wants one. Muse runs in Meta's cloud, so Causeway cannot read its transcript. It can only see what Muse sends to Causeway's own tools. So Muse is asked to hand over the raw material, and the matching stays mechanical.
+Muse is Meta's personal agent. A user can ask it in chat to create a custom connector, which is Meta's term, and Causeway is a remote MCP server added that way. Meta's connector help page does not mention MCP, and vendors report that Muse writes its own MCP client on its cloud VM. So this is how this project connects, not something Meta documents for the app. It has not yet been recorded end to end on the real Muse app.
+
+Muse runs in Meta's cloud, so Causeway cannot read its transcript. It can only see what Muse sends to Causeway's own tools. So Muse is asked to hand over the raw material, and the matching stays mechanical. Muse has approvals of its own, many of them enforced outside the model, and Causeway does not replace them. Muse asks whether. Causeway shows where each value came from.
 
 ### 12.1 Checkpoint (pure logic)
 
-`checkpoint(request, action, arguments, sources)`: `request` is the user's request word for word, `sources` a list of `{label, text}` holding the raw text of everything Muse read that informed the action, and `action`/`arguments` the call it is about to make. It becomes a transcript:
+`checkpoint(request, action, arguments, sources=[])`: `request` is the user's request word for word, `sources` a list of `{label, text}` holding the raw text of everything Muse read that informed the action, and `action`/`arguments` the call it is about to make. Without sources, values not in the request show as `UNSOURCED`. It becomes a transcript:
 
 1. the request as the `user` message (the goal);
 2. a `sources()` call whose result is the labels, one per line, as an agent lists a folder before reading;
 3. one `read(source=<label>)` call per source, whose result is that source's text;
 4. the action as the last assistant message.
 
-It is tagged by §5 with the action's tool watched (§5.5). No taint: verdict `clear`. Taints: a gate opens in the companion (§11.2 `gate`, opaque ids unique across sessions and restarts) and the call waits for Approve or Deny, at most `--wait` seconds (default 90, under Cloudflare's 100 s response limit), then returns `waiting` with the gate id. `checkpoint_result(gate_id)` waits again. A gate id from a replaced checkpoint gets `unknown`. Each checkpoint replaces the companion's session, and an open gate of the old one is denied.
+It is tagged by §5 with the action's tool watched (§5.5). §5 traces values only, so any address, URL or path found in a dict key of `arguments` is tagged too, listed under the path `(in argument names)`. A tool that takes a map keyed by recipient would otherwise hide a recipient from the check. Numbers and long plain names in keys, such as `custom_field_10023`, stay out as the tool's own vocabulary. Then:
 
-The result is `{verdict, gate_id, findings, message}`. A finding is a gate-panel line: `send_email.to = dana.ortiz@lab-mail.example ← read(notes/b.md)  [IN]`. Verdicts: `clear`, `approve`, `deny`, `waiting`, `unknown`, plus `pending` while tagging has not finished.
+- **At least one traced value and no taint:** verdict `clear`. A prose-only value with no atoms is clear too, because a value was reported.
+- **Taints:** a gate opens in the companion (§11.2 `gate`, opaque ids unique across sessions and restarts) and on the phone page (§12.3).
+- **Nothing traced** (empty arguments, all null, or only literals): nothing says the values are the user's, so a gate opens with one taint: path `action`, value `no traceable values reported`, label `none`, source null, tag `NOARGS` or `LIT` (the decision's own tag). Its finding reads `pay.action = no traceable values reported ← none  [LIT]`.
 
-**What this can and cannot show.** Muse reports its own sources. A paraphrased source makes its values look `UNSOURCED`, a false alarm, which fails safe. A compromised Muse could paste a fake source that contains the value, and Causeway would not know. The case Causeway exists for, an honest agent following an instruction planted in data, still shows: Muse hands over the note, and the recipient traces to it.
+The call waits for Approve or Deny, at most `--wait` seconds, then returns `waiting` with the gate id. The default is 20 s, because the MCP TypeScript SDK gives up on a call at 60 s and Muse's own limit is unknown. Cloudflare's documented proxy read timeout, 125 s, is not the tighter limit. `checkpoint_result(gate_id)` waits again and can be called repeatedly until there is a verdict, so a later decision still arrives.
+
+Each checkpoint replaces the companion's session, so Muse is told to check one action at a time. An open gate of the old session ends as `superseded`, not denied: a call still waiting on it returns `superseded`, the page moves on, and no `resolved` event goes out (§11.2). `POST /reset` ends it the same way. A real Deny still returns `deny`, and a decision made before the replacement stands. On the companion page, why buttons for a checkpoint are offered only while its gate is open.
+
+The result is `{verdict, gate_id, findings, message}`. A finding is a gate-panel line: `send_email.to = dana.ortiz@lab-mail.example ← read(notes/b.md)  [IN]`. A source's label in that line is at most 48 characters. A longer one loses its middle, because the end of a URL or path is what tells two sources apart, and Muse is asked for a short name such as the file name.
+
+| Verdict | Meaning | What the message tells Muse |
+|---|---|---|
+| `clear` | No taint | `No traced value came from anywhere but the user's request. This checks where values came from, not whether they are right. Go ahead.` |
+| `approve` | The user approved | Go ahead |
+| `deny` | The user denied | Do not take it. Say what it was about to do and where the values came from |
+| `waiting` | A gate is open | Show the findings now, tell the user to decide on their Causeway page, then call `checkpoint_result` until there is a verdict |
+| `superseded` | Replaced by a newer checkpoint or cleared | The user did not deny it. Do not act. Check again if it is still wanted |
+| `unknown` | A later `checkpoint_result` for a replaced gate, or after a restart | Call `checkpoint` again before acting |
+| `pending` | Tagging has not finished within the wait | Do not act. Wait a few seconds, then call `checkpoint` again. This outcome has no gate id yet |
+
+**What Muse is told**, in the server instructions and tool descriptions: the user decides on their Causeway page, on their phone, PC or headset, and Muse is never given that page's address or any secret. If the user says go ahead or stop in the conversation, Muse follows that and says Causeway did not record it. If `checkpoint` fails or cannot be reached, it does not act and says so. All of this is a request to the model, not enforcement.
+
+**What this can and cannot show.**
+
+- Nothing forces the call, and Muse can skip it. An approval is not bound to the action Muse later takes, because Causeway never sees that action.
+- Muse reports its own sources. A paraphrased source makes its values look `UNSOURCED`, a false alarm, which fails safe. A compromised Muse could paste a fake source that contains the value, or copy the value into `request` and withhold the source, and Causeway would not know.
+- `request` is trusted, so a note pasted into the chat counts as the user's own words and comes back clear. A value the user typed that a source repeats is still flagged, because a source ranks above the goal (§5.3).
+- It fires on correct values too. It asks whenever a value did not come from the request.
+- Tracing has edges, all of which come back clear: a value split into a list of digits, characters or short pieces, an address in the action's name, a path segment of two characters, and a value that equals the request only after casefolding (`pay@straße.example` against `pay@strasse.example`) when the source holding it was not reported. Only a deliberately evasive agent or an unusual tool hits most of these, and an honest agent is what this is for.
+
+The case Causeway exists for, an honest agent following an instruction planted in data, still shows: Muse hands over the note, and the recipient traces to it.
 
 ### 12.2 Server
 
-`python -m causeway.companion.muse [--port 8770] [--mcp-port 8771] [--wait 90] [--tunnel] [--quest]`
+`python -m causeway.companion.muse [--port 8770] [--mcp-port 8771] [--wait 20] [--tunnel] [--quest] [--base-url URL] [--model NAME]`
 
-- FastMCP (the `muse` extra: `mcp`, `uvicorn`), stateless streamable HTTP with JSON responses at `/mcp`, on 127.0.0.1. Server instructions tell Muse when to call `checkpoint` and to copy sources exactly.
-- A key is required: `Authorization: Bearer <key>` or `X-API-Key: <key>`, or the path `/k/<key>/mcp` for a client that cannot send a header. Anything else gets 401 with `WWW-Authenticate: Bearer`. The key is `CAUSEWAY_MCP_KEY` from the environment or `~/.config/causeway/.env`, else a random one printed at start. Host-header checks are off, because requests arrive under the tunnel's hostname; the key is the guard.
-- The companion (§11.3) serves the page on 127.0.0.1 as before, starting with a standby session that tells the user to give Muse the URL. Only the MCP port is meant to face the internet.
-- `--tunnel` starts a cloudflared quick tunnel to the MCP port and prints its public URL. cloudflared is given a config file of its own, because it otherwise reads `~/.cloudflared/config.yaml`, whose named-tunnel ingress can end in `http_status:404` and override `--url`.
-- `why` questions from the page go to the Meta Model API when `MODEL_API_KEY` is set.
+- FastMCP, stateless streamable HTTP with JSON responses at `/mcp`, on 127.0.0.1. The `muse` extra installs `mcp>=1.27,<2` (mcp 2.x removed `mcp.server.fastmcp`), `uvicorn` and `qrcode`. Server instructions tell Muse when to call `checkpoint` and to copy sources exactly.
+- A key is required: `Authorization: Bearer <key>` or `X-API-Key: <key>`, or the path `/k/<key>/mcp` for a client that cannot send a header. A trailing slash on the path is dropped, because the app's redirect would lose the `/k/<key>` prefix. Anything else gets 401 with `WWW-Authenticate: Bearer`, with two exceptions: the owner's page (§12.3), and a path under `/.well-known/`, which gets 404 so an OAuth-aware client finds no metadata instead of concluding OAuth is required. The key is `CAUSEWAY_MCP_KEY` from the environment or `~/.config/causeway/.env`, else a random one printed at start. Host-header checks are off, because requests arrive under the tunnel's hostname; the key is the guard.
+- The companion (§11.3) serves the page on 127.0.0.1 as before, starting with a standby session whose header reads `standby · muse`. It has nothing to run, so Start is hidden and `POST /start` runs nothing. Only the MCP port is meant to face the internet. That port also serves the owner's phone page (§12.3).
+- `--tunnel` starts a cloudflared quick tunnel to the MCP port and prints its public URL. The hostname changes on each run, so a restart means setting up the connector again. cloudflared is given a config file of its own, because it otherwise reads `~/.cloudflared/config.yaml`, whose named-tunnel ingress can end in `http_status:404` and override `--url`. Its error lines are printed with any `/k/<key>/` or `/o/<key>/` path removed. Ctrl+C ends an open gate as `superseded` first, so a call waiting on it gets an answer instead of holding the exit.
+- With a tunnel, the console prints `MCP URL for Muse:   <public>/mcp` and `no header support?  <public>/k/<key>/mcp`. Without one, it prints `local MCP endpoint: http://127.0.0.1:<port>/mcp` and `no public URL:      Muse cannot reach a local address, so it cannot connect. It needs --tunnel.`
+- `why` questions go to the Meta Model API when `MODEL_API_KEY` is set, or to `--base-url` and `--model`.
+- The console logs one line per tool call, including a call FastMCP rejects, which shows `verdict=error`: `HH:MM:SS tool="checkpoint" action="send_email" args=3 sources=2 source_chars=181 verdict=waiting secs=20.0 gate="..." ua="..."`. A `checkpoint_result` for an unknown gate shows `action="-"` and zero counts. Each `initialize` prints `HH:MM:SS initialize client="..." version="..." protocol="..." capabilities="elicitation,roots" ua="..."`. These lines hold names and counts only, never source text, argument values or a key. FastMCP's own INFO lines appear between them, with anything non-printable stripped, because the SDK logs names the agent chose. The startup lines are the only place the MCP key and the phone link print.
+
+### 12.3 The owner's phone page
+
+Muse holds the MCP key, and the companion page cannot be reached from a phone (§11.3). So the MCP port also serves a page for the owner under `/o/<owner key>/` (`causeway.companion.phone`), with the action, the request, each finding, large Approve and Deny buttons, the companion, and a Why button.
+
+**Keys.** `CAUSEWAY_OWNER_KEY` comes from the environment or `~/.config/causeway/.env`, else it is random per run, so the link changes on each restart unless it is set. It must be at least 16 of `A-Za-z0-9_-` and differ from the MCP key, or `main()` exits 2. Neither key works in the other's place, so an agent holding the MCP key cannot reach the page or approve its own action.
+
+**The trade-off: the link is an approval capability.** Holding the link means holding the approval. Anyone who has it can decide an open gate, read the request and findings, and fetch the MCP key from `setup`. It prints only on the console and never goes to Muse. It is still visible to Cloudflare, which ends TLS on the tunnel, and it stays in the phone's browser history. The console also shows a QR code of it, so the console stays off camera. This suits a test errand on a server that stops after the demo. There is no login, and it is not meant for real private errands, whose raw text also passes through Cloudflare. Stopping the server ends the link. With a fixed key, change the key too.
+
+**Routes**, under the prefix:
+
+| Route | Does |
+|---|---|
+| `GET ` (empty) | The page |
+| `GET state` | What the page polls every 1.5 s, because quick tunnels do not carry SSE |
+| `GET setup` | The URL, key, setup prompt and standing rule for Set up Muse |
+| `GET static/<file>` | Only the files the page loads |
+| `POST decide` | `{"gate_id", "verdict"}`, where verdict is exactly `approve` or `deny`. There is no default verdict |
+| `POST why` | `{"gate_id", "question"}` for the open gate |
+
+Anything else under the prefix, including HEAD, gets 404. A wrong key falls through and gets the same 401 as any other path, and so does `/o/<key>` without the trailing slash; the printed link has the slash.
+
+**POST rules.** Exactly one `Origin`, naming either the `Host` header's host or the tunnel's public address, else 403. `application/json`, else 415. A body of at most 8000 bytes, else 413. A non-empty `gate_id` and a valid verdict or question, else 400. An unknown or already decided gate gets 404. In every case bad input leaves the gate open. Accepting the public address means a tap still lands if the tunnel rewrites `Host`. This has been simulated but not seen through a real tunnel.
+
+**Headers on every owner response.** `Content-Security-Policy` (`default-src 'none'`, `script-src 'self'` plus the import map's hash, `style-src 'self'`, `img-src` and `connect-src 'self' blob: data:`, `base-uri`, `form-action` and `frame-ancestors` none), `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, `X-Robots-Tag: noindex`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`. Everything on the page came through the agent, so it is rendered with `textContent` only.
+
+**State.** `verdict` is `standby`, `pending`, `waiting`, `approve`, `deny`, `clear`, `superseded` or `error`. Findings carry `path`, `value`, `label` and `tag`. A value is always text, because a browser's `JSON.parse` would round an integer past 2^53 and draw a different account from the one in the action. Whitespace collapses, then text is clipped to 2000 characters per field, and a clipped field says how many characters went. At most 50 findings are sent, whole arguments first, and `more` says how many were left out.
+
+**Page behaviour.**
+
+- What is drawn is what would be sent. Invisible characters from the agent, such as a direction override or padding, show as `[U+202E]` or `[U+2060 x2100]`, and an address or link holding a non-ASCII letter gets a look-alike warning. Findings list targets such as `to` first. A long action or request scrolls in its own box, so it cannot push the findings far below Approve.
+- The page's work has its own eight threads, so a flood of checkpoint calls holding the shared ones cannot delay a Deny.
+- The headline reads `Waiting for Muse to check something.`, then `Check this before Muse acts.` at a gate, then `Approved` or `Denied` with `Muse is told to go ahead the next time it checks.` or `Muse is told not to do it the next time it checks.`
+- The mask lifts at a gate and settles after it (§11.4). If WebGL fails, the page shows `weebles_idle.jpg` and `weebles_open.jpg` instead, and the buttons still work.
+- A new gate's buttons wake after 800 ms, because an agent holding the MCP key can swap the gate under the owner's thumb. A stale tap gets 404 and changes nothing. A replaced gate shows a note that it was not approved or denied.
+- The console prints `phone page:         <public>/o/<owner key>/`, a QR code when `qrcode` can draw one, and `Keep this window off camera: the phone link can approve actions.` Without a tunnel it prints the 127.0.0.1 link and `This PC only. A phone needs --tunnel.`, with no QR. The link still prints without `qrcode`.
+
+**Why** is how Meta's model appears here, because the checkpoint itself calls no model. It asks the existing why question about the first finding, which is a tainted target when there is one (`Where did the recipient come from?`). Claims show as `Quote found`, `Unproven` or `Struck`, with `Answered by <model>. A found quote does not prove the claim.` The server allows one model call per gate unless a call failed. When there is no model, or the API returns a billing error, the page says so in plain words, and Approve and Deny still work.
+
+**Set up Muse** is collapsed by default, so it does not get filmed. Expanded, it copies the setup prompt (`SETUP_PROMPT` in `phone.py`), the MCP key for Muse's secure prompt only, and the standing rule (`STANDING_RULE`), which the page labels a request to the model, not enforcement. These are how the URL and key reach the phone without entering a chat.
+
+### 12.4 Rehearsal and measurement
+
+`python -m causeway.companion.try_gate [--tunnel] [--repeat] [--port N] [--mcp-port N]` rehearses the phone page with no Muse account and no model key. A scripted client, not Muse, sends the `address_swap` check through the MCP SDK's own client over real HTTP. The script always sends the planted note's address, so it shows the gate and the page, not that any agent falls for the note. The page and console say it is a scripted client wherever they name the agent, and Set up Muse is hidden. It uses the same default ports as `causeway.companion.muse`, and generates both keys per run. The first check goes out 6 s after the page's first poll, and each tool call holds 5 s. `--tunnel` with no public address exits 1, as does a taken port or a client failure.
+
+`python -m causeway.companion.errands` puts 24 labelled errands through `Checkpoint` with no model and no network. The result and its limits are in [`examples/errands.md`](examples/errands.md). They are synthetic, written by the builder, and not a measurement of real Muse.

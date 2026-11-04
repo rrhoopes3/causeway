@@ -6,6 +6,7 @@ per event and two threads never interleave their events.
 
 from __future__ import annotations
 
+import json
 import threading
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -18,7 +19,9 @@ from causeway.client import message_of
 from causeway.demo.agent import REASONING_EFFORT, SYSTEM
 from causeway.demo.tools import ALL, Tool, execute
 
-DENIED = "denied: the user declined this action"
+DENIED = "denied: the user declined this action. It was not done. Do not retry it or try another way. Reply to the user now and say plainly that it was not done."
+NOT_RUN = "not run: the user denied an earlier call in this step, so the replay ended"
+REPLAY_DENIED = "You denied this action, so it was not done. This recorded run stops here."
 VERDICTS = ("approve", "deny")
 NOWHERE = "nowhere in the run"
 MAX_STEPS = 12
@@ -31,6 +34,7 @@ Step = tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]
 @dataclass
 class _Gate:
     gate_id: str
+    proposed: str
     verdict: str | None = None
     resolved: threading.Event = field(default_factory=threading.Event)
 
@@ -42,7 +46,8 @@ class Session:
     constructor emits `hello` and `status idle`. `rivals_client` (default: client) answers rival samples and
     `why_client` (default: rivals_client) answers why(), so neither shares the agent's scripted queue in tests.
     `pace` seconds pass before each model call. `model` labels the run (default: the client's model). Gate ids are
-    a unique session prefix plus a number. An explicit gate_prefix is useful for deterministic tests.
+    a unique session prefix plus a number. An explicit gate_prefix is useful for deterministic tests. With `replay`,
+    the client plays recorded messages, which were written as if every call ran, so a denied call ends the run.
     """
 
     def __init__(
@@ -76,6 +81,7 @@ class Session:
         self.pace = pace
         self.max_steps = max_steps
         self.model = model if model is not None else getattr(client, "model", "unknown")
+        self.replay = replay
         self.gate_prefix = gate_prefix if gate_prefix is not None else f"s{uuid4().hex}-g"
         self._send = emit or (lambda event: None)
         self._lock = threading.RLock()
@@ -150,10 +156,12 @@ class Session:
             self.decide(gate.gate_id, "deny")
 
     def why(self, question: str) -> threading.Thread:
-        """Ask why_client about the current ledger in a thread. Emits `why`, or `error` when the call fails."""
+        """Ask why_client about the current ledger in a thread. Emits `why`, or `error` when the call fails.
+        While a gate is open, the model is told that the gate's action has not run."""
         with self._lock:
             records = list(self._ledger)
-        thread = threading.Thread(target=self._why, args=(question, records), name="causeway-why", daemon=True)
+            proposed = self._open.proposed if self._open else None
+        thread = threading.Thread(target=self._why, args=(question, records, proposed), name="causeway-why", daemon=True)
         thread.start()
         return thread
 
@@ -194,10 +202,16 @@ class Session:
                 self._emit("final", decision=decision["id"], text=decision["text"] or "")
                 return
             for index, call in enumerate(calls):
-                result = self._call(index, call, decision, (before, message, schemas))
+                result = NOT_RUN if self._replay_denied() else self._call(index, call, decision, (before, message, schemas))
                 self._messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": result})
             if self._stop.is_set():
                 return
+            if self._replay_denied():
+                self._emit("final", decision=self._publish()["id"], text=REPLAY_DENIED)
+                return
+
+    def _replay_denied(self) -> bool:
+        return self.replay and any(gate.verdict == "deny" for gate in self._gates.values())
 
     def _call(self, index: int, call: dict[str, Any], decision: dict[str, Any], step: Step) -> str:
         """Run one call, after a gate when its arguments are tainted (§11.1). A denied call returns DENIED."""
@@ -213,10 +227,10 @@ class Session:
         with self._lock:
             if self._stop.is_set():
                 return False
-            gate = _Gate(f"{self.gate_prefix}{len(self._gates) + 1}")
+            action = decision["actions"][index]
+            gate = _Gate(f"{self.gate_prefix}{len(self._gates) + 1}", f"{action['name']} in {decision['id']}")
             self._gates[gate.gate_id] = gate
             self._open = gate
-            action = decision["actions"][index]
             self._emit(
                 "gate",
                 gate_id=gate.gate_id,
@@ -246,7 +260,7 @@ class Session:
         values = {(cause["action"], cause["path"]): cause.get("value") for cause in decision["causes"]}
         labels = cli.origins(self._ledger)
         return [
-            {**entry, "value": values.get((index, entry["path"])), "label": _label(entry["source"], labels)}
+            {**entry, "value": _as_text(values.get((index, entry["path"]))), "label": _label(entry["source"], labels)}
             for entry in entries
         ]
 
@@ -274,9 +288,9 @@ class Session:
             return
         self._emit("rivals", decision=decision_id, rivals=record)
 
-    def _why(self, question: str, records: list[dict[str, Any]]) -> None:
+    def _why(self, question: str, records: list[dict[str, Any]], proposed: str | None) -> None:
         try:
-            result = explain.why(records, question, self.why_client)
+            result = explain.why(records, question, self.why_client, proposed=proposed)
         except Exception as err:  # reported as an event; the run goes on
             self._emit("error", operation="why", question=question, message=f"why failed: {self._describe(err)}")
             return
@@ -291,6 +305,12 @@ class Session:
             if isinstance(key, str) and key:
                 text = text.replace(key, "[redacted]")
         return text
+
+
+def _as_text(value: Any) -> str | None:
+    """A taint's value for the pages. A number goes as text, because a browser's JSON.parse rounds anything past 2^53
+    and would draw an account other than the one in the action."""
+    return value if value is None or isinstance(value, str) else json.dumps(value)
 
 
 def _label(source: str | None, labels: dict[str, str]) -> str:

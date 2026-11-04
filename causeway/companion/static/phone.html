@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0b0d11">
+<title>Causeway</title>
+<link rel="icon" href="data:,">
+<script type="importmap">{"imports": {"three": "./static/vendor/three/three.module.min.js", "three/addons/": "./static/vendor/three/addons/"}}</script>
+<link rel="stylesheet" href="static/phone.css">
+</head>
+<body data-mode="idle" data-verdict="standby" data-conn="connecting">
+<header class="top">
+  <span class="brand">Causeway</span>
+  <span class="conn"><i class="dot" aria-hidden="true"></i><span id="conn">connecting</span></span>
+</header>
+
+<section class="hero">
+  <div class="weebles" aria-hidden="true">
+    <img class="still still-idle" src="static/weebles_idle.jpg" alt="">
+    <img class="still still-open" src="static/weebles_open.jpg" alt="">
+    <canvas id="scene" width="320" height="320"></canvas>
+  </div>
+  <h1 id="headline" role="status" aria-live="polite">Waiting for Muse to check something.</h1>
+  <p id="detail">Keep this page open. The mask lifts when a value in an action comes from anywhere but your request.</p>
+</section>
+
+<p id="note" class="note" role="status" aria-live="polite" hidden></p>
+
+<main id="card" hidden>
+  <p class="label">Muse asked to run</p>
+  <p id="action" class="action"></p>
+  <p class="label">You asked</p>
+  <p id="request" class="request"></p>
+  <div id="findings-block" hidden>
+    <p class="label">Where its values came from</p>
+    <ul id="findings" class="findings"></ul>
+    <p id="more" class="more" hidden></p>
+  </div>
+  <section id="why" class="why" hidden>
+    <button id="why-ask" class="ask" type="button"></button>
+    <p id="why-status" class="why-status" hidden></p>
+    <div id="why-answer" hidden>
+      <p id="why-question" class="label"></p>
+      <p id="why-text" class="why-text"></p>
+      <ul id="why-claims" class="claims"></ul>
+      <p id="why-model" class="why-model"></p>
+    </div>
+  </section>
+</main>
+
+<details id="setup" class="setup">
+  <summary>Set up Muse</summary>
+  <p class="setup-note" id="setup-status">Loading.</p>
+  <div id="setup-steps" hidden>
+    <div class="step">
+      <p class="step-title">1. Setup prompt</p>
+      <p class="setup-note">Paste it alone into a new Muse chat.</p>
+      <textarea id="setup-prompt" rows="6" readonly></textarea>
+      <button class="copy" type="button" data-copy="setup-prompt">Copy prompt</button>
+    </div>
+    <div class="step">
+      <p class="step-title">2. MCP key</p>
+      <p class="setup-note">Paste it only into Muse's secure prompt, never into the chat.</p>
+      <textarea id="setup-key" rows="2" readonly></textarea>
+      <button class="copy" type="button" data-copy="setup-key">Copy key</button>
+    </div>
+    <div class="step">
+      <p class="step-title">3. Standing rule</p>
+      <p class="setup-note">Ask Muse to save it, so it checks without being reminded. It is a request to the model, not enforcement.</p>
+      <textarea id="setup-rule" rows="6" readonly></textarea>
+      <button class="copy" type="button" data-copy="setup-rule">Copy rule</button>
+    </div>
+  </div>
+</details>
+
+<nav id="bar" class="bar" aria-label="Decision" hidden>
+  <button id="deny" class="deny" type="button">Deny</button>
+  <button id="approve" class="approve" type="button">Approve</button>
+</nav>
+<script type="module" src="static/phone.js"></script>
+</body>
+</html>

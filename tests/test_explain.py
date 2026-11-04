@@ -64,6 +64,22 @@ def test_build_messages_contains_system_prompt_ledger_and_question():
     assert messages[1]["content"].endswith(f"Question: {QUESTION}")
 
 
+def test_build_messages_says_a_proposed_action_has_not_run():
+    ledger = _ledger()
+    content = build_messages(ledger, QUESTION, proposed="send_email in d4")[1]["content"]
+    assert "send_email in d4 is only proposed" in content
+    assert "has not run" in content
+    assert render(ledger) in content
+    assert content.endswith(f"Question: {QUESTION}")
+    assert "only proposed" not in build_messages(ledger, QUESTION)[1]["content"]
+
+
+def test_why_sends_the_proposed_note_to_the_model():
+    fake = FakeClient([_response(json.dumps({"answer": "It has not run.", "claims": []}))])
+    why(_ledger(), QUESTION, fake, proposed="send_email in d4")
+    assert fake.calls[0]["messages"] == build_messages(_ledger(), QUESTION, proposed="send_email in d4")
+
+
 def test_why_verifies_supported_and_struck_claims_end_to_end():
     content = json.dumps(
         {

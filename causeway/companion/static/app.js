@@ -6,7 +6,7 @@ import { Companion } from './companion.js';
 import { Input } from './input.js';
 import { follow, post } from './net.js';
 import { Button, Caption, GatePanel, Speech, WhyBoard } from './panels.js';
-import { applyEvent, canAsk, clearState, createState, openGate, showValue, taintLines, whyPresets } from './state.js';
+import { applyEvent, canAsk, clearState, createState, offersStart, openGate, showValue, taintLines, whyPresets } from './state.js';
 import { APPROVE, DENY, FAINT, GOLD, INK, MUTED, canvas } from './text.js';
 
 const BACKGROUND = new THREE.Color('#0b0d11');
@@ -317,11 +317,15 @@ function refresh() {
   const finished = status === 'done' || status === 'error';
   const startLabel = finished ? 'New run' : status === 'idle' ? 'Start' : 'Running';
   const canStart = live && (status === 'idle' || finished);
+  const offered = offersStart(state);
   startButton.set({ label: startLabel, enabled: canStart });
+  startButton.mesh.visible = offered;
+  resetButton.mesh.position.x = offered ? 0.075 : 0;
   resetButton.set({ enabled: live });
   startRow.visible = !gate;
   dom.start.textContent = startLabel;
   dom.start.disabled = !canStart;
+  dom.start.hidden = !offered;
   dom.reset.disabled = !live;
 
   dom.gateControls.hidden = !gate;
@@ -360,7 +364,7 @@ function refresh() {
     [ui.conn, MUTED],
     ['  ·  ', FAINT],
     [status, status === 'waiting' ? GOLD : INK],
-    ...(hello ? [['  ·  ', FAINT], [[hello.scenario, hello.model].filter(Boolean).join(' · '), FAINT]] : []),
+    ...(hello ? [['  ·  ', FAINT], [[hello.scenario, hello.replay ? 'replay' : hello.model].filter(Boolean).join(' · '), FAINT]] : []),
   ]);
 }
 

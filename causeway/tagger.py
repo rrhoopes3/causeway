@@ -90,8 +90,8 @@ def is_trivial(value: Any) -> bool:
 
 
 def is_prose(value: Any) -> bool:
-    """A string of 8 or more whitespace-separated words, or a string containing a newline (§5.4c)."""
-    return isinstance(value, str) and (len(value.split()) >= PROSE_MIN_WORDS or "\n" in value)
+    """A string of 8 or more whitespace-separated words, or one with a newline inside it, not just at its end (§5.4c)."""
+    return isinstance(value, str) and (len(value.split()) >= PROSE_MIN_WORDS or "\n" in value.strip())
 
 
 def needle_of(value: Any) -> str:

@@ -26,6 +26,7 @@ from causeway import explain, ledger, rivals, steps, tagger, transcript
 from causeway.client import DEFAULT_BASE_URL, DEFAULT_MODEL, REASONING_EFFORTS, APIError, ChatClient
 
 ACTION_WIDTH = 60
+MAX_ORIGIN = 48
 ECHO_BADGE = "ECHO←"
 WATCH_MARK = "⚠"
 SPLIT_MARK = "~"
@@ -94,6 +95,14 @@ def render_table(records: list[dict]) -> str:
     return "\n".join(lines) + "\n" + render_taints(records) + render_splits(records)
 
 
+def _shortened(text: str) -> str:
+    """text, at most MAX_ORIGIN characters. A long one loses its middle: the end of a URL or path tells two sources apart."""
+    if len(text) <= MAX_ORIGIN:
+        return text
+    tail = MAX_ORIGIN * 2 // 3
+    return f"{text[:MAX_ORIGIN - tail - 1]}…{text[-tail:]}"
+
+
 def origins(records: list[dict]) -> dict[str, str]:
     """Label each tool-result event with the call that produced it, e.g. e5 -> 'read_file(notes/b.md)'.
 
@@ -103,7 +112,7 @@ def origins(records: list[dict]) -> dict[str, str]:
         if record.get("kind") == "decision":
             for action in record["actions"]:
                 values = [str(value) for _, value in tagger.flatten(action["args"])]
-                calls[action.get("call_id")] = f"{action['name']}({', '.join(values)[:48]})"
+                calls[action.get("call_id")] = f"{action['name']}({_shortened(', '.join(values))})"
     labels = {}
     for record in records:
         if record.get("kind") == "event":
